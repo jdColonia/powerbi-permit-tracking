@@ -1,0 +1,104 @@
+/// Disconnected table: one row per backlog indicator (KPI cards of the Backlog page, Deneb visual).
+table KpiCards
+	lineageTag: 67ac2067-671e-49e4-b749-ad8584732f01
+
+	column Key
+		dataType: string
+		lineageTag: 68734773-4030-48fb-bc79-dc2c526bacc7
+		summarizeBy: none
+		sourceColumn: Key
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Indicator ES'
+		dataType: string
+		lineageTag: 553dcc2a-8304-4356-9f82-f4e9c1a57213
+		summarizeBy: none
+		sourceColumn: Indicator ES
+		sortByColumn: 'Card Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Indicator EN'
+		dataType: string
+		lineageTag: fc4be40c-388b-5961-8240-bd74391b66dd
+		summarizeBy: none
+		sourceColumn: Indicator EN
+		sortByColumn: 'Card Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Subtitle ES'
+		dataType: string
+		lineageTag: 9ef309d4-8c6b-4162-9080-ddfa6653cbcf
+		summarizeBy: none
+		sourceColumn: Subtitle ES
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Subtitle EN'
+		dataType: string
+		lineageTag: fcefe07b-d948-51ca-9847-fcd53f666ea6
+		summarizeBy: none
+		sourceColumn: Subtitle EN
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Unit ES'
+		dataType: string
+		lineageTag: 37904595-9474-47f4-8659-c1477e9e2548
+		summarizeBy: none
+		sourceColumn: Unit ES
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Unit EN'
+		dataType: string
+		lineageTag: 8f0766cc-c2e9-58a7-a4a1-d37e4cc6e118
+		summarizeBy: none
+		sourceColumn: Unit EN
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Card Order'
+		dataType: int64
+		isHidden
+		lineageTag: 41f2547d-f96f-4c22-b26a-6cc378f9311d
+		summarizeBy: none
+		sourceColumn: Card Order
+
+		annotation SummarizationSetBy = Automatic
+
+	partition KpiCards = m
+		mode: import
+		queryGroup: '6. Support'
+		source =
+				let
+				    // One row per card: indicator key, title, subtitle, unit and position (both languages)
+				    Source = #table(
+				        {"Key", "Indicator ES", "Indicator EN", "Subtitle ES", "Subtitle EN", "Unit ES", "Unit EN", "Card Order"},
+				        {
+				            {"Backlog",   "Backlog total en proceso",     "Total backlog in progress",
+				                "Órdenes abiertas de permisos, sin avisos de obra menor",  "Open permit orders, excluding minor works notices", "órdenes", "orders", 1},
+				            {"Age",       "Edad del backlog",             "Backlog age",
+				                "Días promedio que llevan abiertas",                        "Average days open",                               "días",    "days",   2},
+				            {"Handling",  "Tiempo promedio de gestión",   "Average handling time",
+				                "Creación → cierre · órdenes cerradas",                     "Creation → closure · closed orders",              "días",    "days",   3},
+				            {"Municipal", "Tiempo de solicitud del permiso", "Permit filing time",
+				                "Solicitudes del permiso cerradas · todos los motivos",     "Closed permit filings · all closure reasons",     "días",    "days",   4}
+				        }
+				    ),
+				    ChangedTypes = Table.TransformColumnTypes(Source, {
+				        {"Key", type text},
+				        {"Indicator ES", type text},
+				        {"Indicator EN", type text},
+				        {"Subtitle ES", type text},
+				        {"Subtitle EN", type text},
+				        {"Unit ES", type text},
+				        {"Unit EN", type text},
+				        {"Card Order", Int64.Type}
+				    })
+				in
+				    ChangedTypes
+
+	annotation PBI_ResultType = Table

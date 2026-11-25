@@ -1,0 +1,208 @@
+/// Work types with group (Filing, Review, Standalone), responsible area and backlog flag. Edited in config_work_types.csv.
+table Dim_WorkType
+	lineageTag: be4a0a4b-d0eb-4256-8bbf-c81bddfab39c
+
+	column WorkTypeKey
+		dataType: string
+		isHidden
+		lineageTag: 944d8ddf-68c6-44eb-bbea-cd5a6326b933
+		summarizeBy: none
+		sourceColumn: WorkTypeKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Work Type Description ES'
+		dataType: string
+		lineageTag: 33e77c5b-d4ed-4c77-80f6-7b1ad64e1195
+		summarizeBy: none
+		sourceColumn: Work Type Description ES
+		sortByColumn: 'Stage Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Work Type Description EN'
+		dataType: string
+		lineageTag: d635688b-c392-5acf-92c0-4d8e60160e0e
+		summarizeBy: none
+		sourceColumn: Work Type Description EN
+		sortByColumn: 'Stage Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Language-independent group: Filing, Review or Standalone. DAX rules use this column.
+	column 'Group Key'
+		dataType: string
+		isHidden
+		lineageTag: 0c5ea773-1581-425b-bf98-375ddd779493
+		summarizeBy: none
+		sourceColumn: Group Key
+		sortByColumn: 'Group Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Group ES'
+		dataType: string
+		lineageTag: 267cdb05-3db1-533f-8400-4122567da1a2
+		summarizeBy: none
+		sourceColumn: Group ES
+		sortByColumn: 'Group Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Group EN'
+		dataType: string
+		lineageTag: f686220e-43b7-53d1-87bc-c56b66ebd276
+		summarizeBy: none
+		sourceColumn: Group EN
+		sortByColumn: 'Group Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Group Order'
+		dataType: int64
+		isHidden
+		lineageTag: 355eda76-93c9-49a3-ba92-f1822c7742a3
+		summarizeBy: none
+		sourceColumn: Group Order
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Area responsible for the work type.
+	column 'Area ES'
+		dataType: string
+		lineageTag: 17f36bb0-8b72-47f1-a949-e1d8c15a3251
+		summarizeBy: none
+		sourceColumn: Area ES
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Area responsible for the work type.
+	column 'Area EN'
+		dataType: string
+		lineageTag: 7aea131e-3bc3-5e53-9af0-3a23bcb4a657
+		summarizeBy: none
+		sourceColumn: Area EN
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Counts In Backlog'
+		dataType: boolean
+		lineageTag: e87b02b5-edcb-449d-87cd-e6f5f2afbf27
+		summarizeBy: none
+		sourceColumn: Counts In Backlog
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Stage Order'
+		dataType: int64
+		isHidden
+		lineageTag: 0759adbb-4ca7-48a0-97bf-4e8d4950b9a0
+		summarizeBy: none
+		sourceColumn: Stage Order
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Row of the Rates table that charges this work type (ENVIRONMENTAL, NATIONAL, DEPARTMENTAL...). Empty = no cost.
+	column 'Permit Group Key'
+		dataType: string
+		isHidden
+		lineageTag: 8502851b-caf9-4f4d-bac4-e9456ba698dc
+		summarizeBy: none
+		sourceColumn: Permit Group Key
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Permit Group ES'
+		dataType: string
+		lineageTag: caee55a4-a274-4980-a255-f74a63445ac7
+		summarizeBy: none
+		sourceColumn: Permit Group ES
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Permit Group EN'
+		dataType: string
+		lineageTag: 2a0f7da3-10a0-5231-b6e9-96438ae7b6aa
+		summarizeBy: none
+		sourceColumn: Permit Group EN
+
+		annotation SummarizationSetBy = Automatic
+
+	/// True if the work type belongs to the Filing, Review or Standalone groups. The permit rules only use these work types.
+	column 'Is Permit Work Type'
+		dataType: boolean
+		isHidden
+		lineageTag: 2ea4fb9c-5c77-44ac-91d3-7068adbe479e
+		summarizeBy: none
+		sourceColumn: Is Permit Work Type
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Dim_WorkType = m
+		mode: import
+		queryGroup: '4. Dimensions'
+		source =
+				let
+				    // ---------- config_work_types.csv ----------
+				    Source = Table.TransformColumnNames(fnReadCsv("config_work_types.csv"), Text.Trim),
+				    // YES / Y / TRUE / 1 -> true; anything else -> false
+				    fnYes = (v as any) as logical =>
+				        let t = fnText(v) in t <> null and List.Contains({"YES", "Y", "TRUE", "1"}, Text.Upper(t)),
+				
+				    // ---------- Types and validation ----------
+				    Typed = Table.TransformColumns(Source, {
+				        {"Work Type Code", each fnText(_), type text},
+				        {"Description ES", each fnText(_), type text},
+				        {"Description EN", each fnText(_), type text},
+				        {"Group", each fnText(_), type text},
+				        {"Group ES", each fnText(_), type text},
+				        {"Group EN", each fnText(_), type text},
+				        {"Area ES", each fnText(_), type text},
+				        {"Area EN", each fnText(_), type text},
+				        {"Counts In Backlog", fnYes, type logical},
+				        {"Stage Order", fnInteger, Int64.Type},
+				        {"Permit Group", each let t = fnText(_) in if t = null then null else Text.Upper(t), type text},
+				        {"Permit Group ES", each fnText(_), type text},
+				        {"Permit Group EN", each fnText(_), type text}
+				    }),
+				    NonEmpty = Table.SelectRows(Typed, each [Work Type Code] <> null),
+				    Codes = List.Buffer(NonEmpty[Work Type Code]),
+				    Repeated = List.Select(List.Distinct(Codes), (c) => List.Count(List.Select(Codes, each _ = c)) > 1),
+				    // A repeated code stops the refresh with a message that lists them
+				    Validated =
+				        if List.IsEmpty(Repeated) then NonEmpty
+				        else error Error.Record(
+				            "Repeated work type codes",
+				            "Check config_work_types.csv. Repeated: " & Text.Combine(Repeated, ", ")),
+				
+				    // ---------- Helper columns for axes, filters and legends ----------
+				    GroupKeys = {"Filing", "Review", "Standalone"},
+				    WithPosition = Table.AddIndexColumn(Validated, "_Position", 1, 1, Int64.Type),
+				    WithGroup = Table.AddColumn(Table.AddColumn(Table.AddColumn(Table.AddColumn(WithPosition,
+				        "Group Key", each if [Group] = null then "None" else [Group], type text),
+				        "Group ES Label", each if [Group ES] = null then "Sin grupo" else [Group ES], type text),
+				        "Group EN Label", each if [Group EN] = null then "No group" else [Group EN], type text),
+				        // Position of the group in Filing, Review, Standalone (1 to 3); any other group goes last (10)
+				        "Group Order", each List.PositionOf(GroupKeys, [Group]) + 1 + (if List.Contains(GroupKeys, [Group]) then 0 else 10), Int64.Type),
+				    WithArea = Table.AddColumn(Table.AddColumn(WithGroup,
+				        "Area ES Label", each if [Area ES] = null then "Sin responsable" else [Area ES], type text),
+				        "Area EN Label", each if [Area EN] = null then "No owner" else [Area EN], type text),
+				    // Work types without a stage order go last, in the order of the file
+				    WithStage = Table.AddColumn(WithArea, "Stage Order Final", each if [Stage Order] = null then 1000 + [_Position] else [Stage Order], Int64.Type),
+				    // Permit work types: those of group Filing, Review or Standalone
+				    WithPermit = Table.AddColumn(WithStage, "Is Permit Work Type", each List.Contains(GroupKeys, [Group]), type logical),
+				
+				    Selected = Table.SelectColumns(WithPermit, {
+				        "Work Type Code", "Description ES", "Description EN", "Group Key", "Group ES Label", "Group EN Label",
+				        "Group Order", "Area ES Label", "Area EN Label", "Counts In Backlog", "Stage Order Final", "Permit Group", "Permit Group ES", "Permit Group EN",
+				        "Is Permit Work Type"}),
+				    Renamed = Table.RenameColumns(Selected, {
+				        {"Work Type Code", "WorkTypeKey"}, {"Description ES", "Work Type Description ES"}, {"Description EN", "Work Type Description EN"},
+				        {"Group ES Label", "Group ES"}, {"Group EN Label", "Group EN"}, {"Area ES Label", "Area ES"}, {"Area EN Label", "Area EN"},
+				        {"Stage Order Final", "Stage Order"}, {"Permit Group", "Permit Group Key"}}),
+				    // Small table used by many queries: buffered so it is not recomputed on every walk
+				    Final = Table.Buffer(Renamed)
+				in
+				    Final
+
+	annotation PBI_ResultType = Table

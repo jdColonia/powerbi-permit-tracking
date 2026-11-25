@@ -1,0 +1,669 @@
+/// Folder or web address that holds the data files (orders, configuration and snapshot), ending in / or \. Use the raw GitHub folder or a local copy of the data folder.
+expression DataRoot = "https://raw.githubusercontent.com/jdColonia/powerbi-permit-tracking/main/data/" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: 49fb2578-e7d1-4eee-baaf-691b9eeff724
+	queryGroup: '1. Parameters'
+
+	annotation PBI_ResultType = Text
+
+/// Names of the order files (.parquet or .csv), separated by semicolons, from oldest to newest (if an order is in two files, the most advanced row wins; on a tie, the newest file).
+expression OrderFiles = "orders_history.parquet;orders_current.csv" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: 3175890d-1568-493b-abaa-5db9af1046e1
+	queryGroup: '1. Parameters'
+
+	annotation PBI_ResultType = Text
+
+/// Opens a data file as binary, from a web folder (DataRoot starting with http) or from a local folder.
+expression fnReadFile =
+		(fileName as text) as binary =>
+		    if Text.StartsWith(DataRoot, "http") then Web.Contents(DataRoot, [RelativePath = fileName])
+		    else File.Contents(DataRoot & fileName)
+	lineageTag: 64dcaed9-8afc-5aa6-8333-a64a99fbe9e1
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Reads a CSV file of the data folder as a table of text columns (first row promoted to headers).
+expression fnReadCsv =
+		(fileName as text) as table =>
+		    Table.PromoteHeaders(
+		        Csv.Document(fnReadFile(fileName), [Delimiter = ",", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),
+		        [PromoteAllScalars = true])
+	lineageTag: 20f60e26-2d46-5beb-b495-b728eb980338
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Date of the data snapshot (data/snapshot.csv). Single source of "today" for the whole model, so ages and states stay stable.
+expression SnapshotDate =
+		let
+		    Source = fnReadCsv("snapshot.csv"),
+		    Value = Date.FromText(fnText(Source{0}[snapshot_date]), [Format = "yyyy-MM-dd", Culture = "en-US"])
+		in
+		    Value
+	lineageTag: aefd87f6-6ad4-44c3-a06a-742cb4c76e0d
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Date
+
+/// Text of a cell without extra spaces; empty = null (or the ifEmpty value).
+expression fnText =
+		(value as any, optional ifEmpty as nullable text) as nullable text =>
+		    // t = the value as trimmed text (null counts as empty); if it is empty the ifEmpty value is returned
+		    let t = if value = null then "" else Text.Trim(Text.From(value))
+		    in if t = "" then ifEmpty else t
+	lineageTag: b0c4fb0a-69eb-4edf-84e6-64161a5ce2d5
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Number of a cell: 4500000 | $ 4,500,000 | 0.19 | 19 %.
+expression fnNumber =
+		(value as any) as nullable number =>
+		    // null -> null; a number stays as is; text is cleaned and parsed with en-US
+		    if value = null then null
+		    else if value is number then value
+		    else
+		        let
+		            // No spaces or $ sign (the % is detected and removed separately)
+		            t = Text.Remove(Text.Trim(Text.From(value)), {" ", "$"}),
+		            isPct = Text.EndsWith(t, "%"),
+		            withoutPct = Text.Remove(t, {"%"}),
+		            n = try Number.FromText(withoutPct, "en-US") otherwise null
+		        in
+		            // Unreadable or empty -> null; with % the value is divided by 100 ("19 %" -> 0.19)
+		            if withoutPct = "" or n = null then null else if isPct then n / 100 else n
+	lineageTag: 30709e80-d0c4-4ed9-8259-92d4eaa1c9ec
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Whole number of a cell (ids and codes).
+expression fnInteger =
+		(value as any) as nullable number =>
+		    // null -> null; a number is rounded down; text is cleaned, parsed and rounded down
+		    if value = null then null
+		    else if value is number then Number.RoundDown(value)
+		    else
+		        let t = Text.Remove(Text.Trim(Text.From(value)), {" "})
+		        in if t = "" then null else try Number.RoundDown(Number.FromText(t, "en-US")) otherwise null
+	lineageTag: d3a3ed4c-0eda-45e7-a84f-8f018814a5ae
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Date of a cell: a date, a datetime or text (yyyy-MM-dd, dd/MM/yyyy). Unreadable values return null.
+expression fnDate =
+		(value as any) as nullable date =>
+		    // Depending on the cell type: date, datetime, datetimezone or text
+		    if value = null then null
+		    else if value is date then value
+		    else if value is datetime then Date.From(value)
+		    else if value is datetimezone then Date.From(DateTimeZone.RemoveZone(value))
+		    else
+		        let
+		            // Text: drop the time (what follows a space or a T) and split by / - . into numbers
+		            t = Text.Trim(Text.From(value)),
+		            dateOnly = Text.BeforeDelimiter(Text.BeforeDelimiter(t, " "), "T"),
+		            parts = List.Select(Text.SplitAny(dateOnly, "/-."), each _ <> ""),
+		            n = List.Transform(parts, each try Number.FromText(_, "en-US") otherwise null)
+		        in
+		            // Empty -> null; three readable parts are required; if the first is greater than 31 it is
+		            // year-month-day, otherwise day-month-year (a 2-digit year means 20xx)
+		            if t = "" then null
+		            else if List.Count(n) <> 3 or List.Contains(n, null) then null
+		            else if n{0} > 31 then try #date(n{0}, n{1}, n{2}) otherwise null
+		            else try #date(if n{2} < 100 then 2000 + n{2} else n{2}, n{1}, n{0}) otherwise null
+	lineageTag: 97ced0b8-6324-420b-955f-e820ded1b7c6
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Datetime of a cell (a date without time = 00:00).
+expression fnDateTime =
+		(value as any) as nullable datetime =>
+		    // Each cell type is converted directly; a date without time becomes 00:00
+		    if value = null then null
+		    else if value is datetime then value
+		    else if value is datetimezone then DateTimeZone.RemoveZone(value)
+		    else if value is date then DateTime.From(value)
+		    else
+		        // Text: it must be readable as a date (fnDate); with a time it is read by position
+		        let
+		            t = Text.Trim(Text.From(value)),
+		            d = fnDate(value),
+		            // ISO yyyy-MM-dd HH:mm[:ss] (space or T): read by position, no culture involved
+		            iso =
+		                if Text.Length(t) >= 16 and Text.At(t, 4) = "-" and Text.At(t, 7) = "-" and (Text.At(t, 10) = " " or Text.At(t, 10) = "T") and Text.At(t, 13) = ":"
+		                then try #datetime(
+		                        Number.FromText(Text.Middle(t, 0, 4), "en-US"), Number.FromText(Text.Middle(t, 5, 2), "en-US"), Number.FromText(Text.Middle(t, 8, 2), "en-US"),
+		                        Number.FromText(Text.Middle(t, 11, 2), "en-US"), Number.FromText(Text.Middle(t, 14, 2), "en-US"),
+		                        if Text.Length(t) >= 19 and Text.At(t, 16) = ":" then Number.FromText(Text.Middle(t, 17, 2), "en-US") else 0) otherwise null
+		                else null
+		        in if t = "" or d = null then null
+		           else if iso <> null then iso
+		           else DateTime.From(d)
+	lineageTag: 74d16882-bb9d-439a-bbc0-56a734c9f878
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Removes accents, diaereses and tildes from a text.
+expression fnStripAccents =
+		(text as text) as text =>
+		    List.Accumulate(
+		        {{"á","a"},{"é","e"},{"í","i"},{"ó","o"},{"ú","u"},{"ü","u"},{"ñ","n"},
+		         {"Á","A"},{"É","E"},{"Í","I"},{"Ó","O"},{"Ú","U"},{"Ü","U"},{"Ñ","N"}},
+		        text, (acc, pair) => Text.Replace(acc, pair{0}, pair{1}))
+	lineageTag: 6d8f9858-a426-4945-ba11-0f8eb028c8ef
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Text prepared for comparison: upper case, without accents and without double spaces.
+expression fnKey =
+		(text as nullable text) as nullable text =>
+		    if text = null then null
+		    else
+		        let
+		            // u = upper case and without accents
+		            u = fnStripAccents(Text.Upper(text)),
+		            // Line breaks and tabs count as one space
+		            spaced = Text.Replace(Text.Replace(Text.Replace(u, "#(cr)", " "), "#(lf)", " "), "#(tab)", " ")
+		        in
+		            // Split by spaces, drop the empty parts and join with a single space
+		            Text.Combine(List.Select(Text.Split(spaced, " "), each _ <> ""), " ")
+	lineageTag: 3d19419f-e1ef-4963-afb4-2ac8239a3ba3
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Result of a closure reason: by code and, if it does not match, by text (uses ClosureReasonConfig).
+expression fnClosureResult =
+		(config as table) as function =>
+		    let
+		        // ---------- Lookup tables (built once, when the config table is received) ----------
+		        // By code: no empty or repeated codes (the first one stays), as a record for fast lookup
+		        ByCode = Table.Buffer(Table.Distinct(
+		            Table.SelectRows(Table.SelectColumns(config, {"ClosureReasonKey", "ResultKey"}), each [ClosureReasonKey] <> null),
+		            {"ClosureReasonKey"})),
+		        ResultsByCode = Record.FromList(ByCode[ResultKey], ByCode[ClosureReasonKey]),
+		        // By text: ReasonLookup is already normalized with fnKey in ClosureReasonConfig
+		        ByText = Table.Buffer(Table.SelectColumns(config, {"ReasonLookup", "ResultKey"})),
+		        ResultsByText = Record.FromList(ByText[ResultKey], ByText[ReasonLookup])
+		    in
+		        // ---------- Returned lookup function: first by code and, if not found, by text ----------
+		        (code as nullable text, description as nullable text) as nullable text =>
+		            let
+		                byCode = if code = null then null else Record.FieldOrDefault(ResultsByCode, code, null),
+		                byText = if description = null then null else Record.FieldOrDefault(ResultsByText, fnKey(description), null)
+		            in
+		                if byCode <> null then byCode else byText
+	lineageTag: 50e6c8e7-af27-4966-b7f6-0ce6a78ab579
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Official municipality (catalog with department and coordinates) recognized in a text: (text) -> [Municipality, Department, Latitude, Longitude] or null. Used by Dim_Location.
+expression fnMunicipality =
+		let
+		    // Municipality catalog: official name, department and approximate coordinates of the town centre
+		    Coordinates = #table(
+		        type table [Municipality = text, Department = text, Latitude = number, Longitude = number],
+		        {
+		            // ---- Valle del Cauca ----
+		            {"Alcalá",                 "Valle del Cauca", 4.6747, -75.7822},
+		            {"Andalucía",              "Valle del Cauca", 4.1717, -76.1675},
+		            {"Ansermanuevo",           "Valle del Cauca", 4.7967, -75.9947},
+		            {"Argelia",                "Valle del Cauca", 4.7275, -76.1203},
+		            {"Bolívar",                "Valle del Cauca", 4.3389, -76.1847},
+		            {"Buenaventura",           "Valle del Cauca", 3.8801, -77.0312},
+		            {"Buga",                   "Valle del Cauca", 3.9009, -76.2978},
+		            {"Bugalagrande",           "Valle del Cauca", 4.2092, -76.1553},
+		            {"Caicedonia",             "Valle del Cauca", 4.3322, -75.8264},
+		            {"Cali",                   "Valle del Cauca", 3.4516, -76.5320},
+		            {"Calima",                 "Valle del Cauca", 3.9314, -76.4850},
+		            {"Candelaria",             "Valle del Cauca", 3.4081, -76.3486},
+		            {"Cartago",                "Valle del Cauca", 4.7464, -75.9117},
+		            {"Dagua",                  "Valle del Cauca", 3.6567, -76.6886},
+		            {"El Águila",              "Valle del Cauca", 4.9128, -76.0425},
+		            {"El Cairo",               "Valle del Cauca", 4.7608, -76.2214},
+		            {"El Cerrito",             "Valle del Cauca", 3.6857, -76.3130},
+		            {"El Dovio",               "Valle del Cauca", 4.5078, -76.2361},
+		            {"Florida",                "Valle del Cauca", 3.3232, -76.2344},
+		            {"Ginebra",                "Valle del Cauca", 3.7243, -76.2672},
+		            {"Guacarí",                "Valle del Cauca", 3.7631, -76.3325},
+		            {"Jamundí",                "Valle del Cauca", 3.2610, -76.5390},
+		            {"La Cumbre",              "Valle del Cauca", 3.6497, -76.5697},
+		            {"La Unión",               "Valle del Cauca", 4.5328, -76.1037},
+		            {"La Victoria",            "Valle del Cauca", 4.5236, -76.0364},
+		            {"Obando",                 "Valle del Cauca", 4.5756, -75.9744},
+		            {"Palmira",                "Valle del Cauca", 3.5394, -76.3036},
+		            {"Pradera",                "Valle del Cauca", 3.4207, -76.2432},
+		            {"Restrepo",               "Valle del Cauca", 3.8219, -76.5225},
+		            {"Riofrío",                "Valle del Cauca", 4.1561, -76.2881},
+		            {"Roldanillo",             "Valle del Cauca", 4.4130, -76.1546},
+		            {"San Pedro",              "Valle del Cauca", 3.9942, -76.2289},
+		            {"Sevilla",                "Valle del Cauca", 4.2686, -75.9311},
+		            {"Toro",                   "Valle del Cauca", 4.6075, -76.0764},
+		            {"Trujillo",               "Valle del Cauca", 4.2119, -76.3189},
+		            {"Tuluá",                  "Valle del Cauca", 4.0847, -76.1954},
+		            {"Ulloa",                  "Valle del Cauca", 4.7036, -75.7369},
+		            {"Versalles",              "Valle del Cauca", 4.5750, -76.2003},
+		            {"Vijes",                  "Valle del Cauca", 3.6983, -76.4411},
+		            {"Yotoco",                 "Valle del Cauca", 3.8603, -76.3831},
+		            {"Yumbo",                  "Valle del Cauca", 3.5857, -76.4959},
+		            {"Zarzal",                 "Valle del Cauca", 4.3947, -76.0714},
+		            // ---- Cauca ----
+		            {"Almaguer",               "Cauca", 1.9139, -76.8564},
+		            {"Balboa",                 "Cauca", 2.0406, -77.2167},
+		            {"Buenos Aires",           "Cauca", 3.0158, -76.6433},
+		            {"Cajibío",                "Cauca", 2.6231, -76.5703},
+		            {"Caldono",                "Cauca", 2.7975, -76.4839},
+		            {"Caloto",                 "Cauca", 3.0350, -76.4086},
+		            {"Corinto",                "Cauca", 3.1739, -76.2594},
+		            {"El Tambo",               "Cauca", 2.4517, -76.8108},
+		            {"Florencia",              "Cauca", 1.6828, -77.0725},
+		            {"Guachené",               "Cauca", 3.1333, -76.3922},
+		            {"Guapí",                  "Cauca", 2.5703, -77.8856},
+		            {"Inzá",                   "Cauca", 2.5514, -76.0636},
+		            {"Jambaló",                "Cauca", 2.7775, -76.3239},
+		            {"La Sierra",              "Cauca", 2.1797, -76.7631},
+		            {"La Vega",                "Cauca", 2.0017, -76.7792},
+		            {"López de Micay",         "Cauca", 2.8456, -77.2481},
+		            {"Mercaderes",             "Cauca", 1.7939, -77.1669},
+		            {"Miranda",                "Cauca", 3.2497, -76.2283},
+		            {"Morales",                "Cauca", 2.7547, -76.6283},
+		            {"Padilla",                "Cauca", 3.2214, -76.3131},
+		            {"Páez",                   "Cauca", 2.6464, -75.9719},
+		            {"Patía",                  "Cauca", 2.1142, -77.0544},
+		            {"Piamonte",               "Cauca", 1.1161, -76.3228},
+		            {"Piendamó",               "Cauca", 2.6397, -76.5286},
+		            {"Popayán",                "Cauca", 2.4448, -76.6147},
+		            {"Puerto Tejada",          "Cauca", 3.2306, -76.4172},
+		            {"Puracé",                 "Cauca", 2.3431, -76.4978},
+		            {"Rosas",                  "Cauca", 2.2611, -76.7400},
+		            {"San Sebastián",          "Cauca", 1.8386, -76.7697},
+		            {"Santa Rosa",             "Cauca", 1.6997, -76.5731},
+		            {"Santander de Quilichao", "Cauca", 3.0092, -76.4847},
+		            {"Silvia",                 "Cauca", 2.6119, -76.3803},
+		            {"Sotará",                 "Cauca", 2.2517, -76.6131},
+		            {"Suárez",                 "Cauca", 2.9547, -76.6936},
+		            {"Sucre",                  "Cauca", 2.0381, -76.9258},
+		            {"Timbío",                 "Cauca", 2.3522, -76.6831},
+		            {"Timbiquí",               "Cauca", 2.7719, -77.6653},
+		            {"Toribío",                "Cauca", 2.9544, -76.2703},
+		            {"Totoró",                 "Cauca", 2.5108, -76.4025},
+		            {"Villa Rica",             "Cauca", 3.1778, -76.4608},
+		            // ---- Risaralda ----
+		            {"Pereira",                "Risaralda", 4.8133, -75.6961},
+		            {"Dosquebradas",           "Risaralda", 4.8392, -75.6672},
+		            {"Santa Rosa de Cabal",    "Risaralda", 4.8681, -75.6214},
+		            {"La Virginia",            "Risaralda", 4.8997, -75.8822},
+		            {"Marsella",               "Risaralda", 4.9356, -75.7386},
+		            {"Santuario",              "Risaralda", 5.0731, -75.9644},
+		            {"Apía",                   "Risaralda", 5.1061, -75.9419},
+		            {"Belén de Umbría",        "Risaralda", 5.2017, -75.8689},
+		            {"Guática",                "Risaralda", 5.3153, -75.7981},
+		            {"La Celia",               "Risaralda", 5.0028, -76.0042},
+		            {"Mistrató",               "Risaralda", 5.2967, -75.8828},
+		            {"Pueblo Rico",            "Risaralda", 5.2211, -76.0300},
+		            {"Quinchía",               "Risaralda", 5.3394, -75.7303},
+		            // ---- Quindio ----
+		            {"Armenia",                "Quindío", 4.5339, -75.6811},
+		            {"Buenavista",             "Quindío", 4.3600, -75.7392},
+		            {"Calarcá",                "Quindío", 4.5297, -75.6436},
+		            {"Circasia",               "Quindío", 4.6189, -75.6356},
+		            {"Córdoba",                "Quindío", 4.3925, -75.6878},
+		            {"Filandia",               "Quindío", 4.6747, -75.6581},
+		            {"Génova",                 "Quindío", 4.2069, -75.7906},
+		            {"La Tebaida",             "Quindío", 4.4528, -75.7881},
+		            {"Montenegro",             "Quindío", 4.5664, -75.7511},
+		            {"Pijao",                  "Quindío", 4.3344, -75.7044},
+		            {"Quimbaya",               "Quindío", 4.6239, -75.7628},
+		            {"Salento",                "Quindío", 4.6372, -75.5708}
+		        }
+		    ),
+		
+		    // Extra keywords: alternative names that do NOT contain the official name (those that do,
+		    // like "SANTIAGO DE CALI", are resolved on their own). Do not repeat an official name here.
+		    Aliases = #table(
+		        type table [Alias = text, OfficialMunicipality = text],
+		        {
+		            {"DARIEN", "Calima"},
+		            {"BELALCAZAR", "Páez"},
+		            {"EL BORDO", "Patía"},
+		            {"SANTANDER", "Santander de Quilichao"},
+		            {"QUILICHAO", "Santander de Quilichao"},
+		            {"LOPEZ", "López de Micay"},
+		            // Rural district written without its municipality in parentheses
+		            {"SAN RAFAEL", "Santander de Quilichao"}
+		        }
+		    ),
+		
+		    // Key table: normalized official name (fnKey) + normalized aliases
+		    OfficialKeys = Table.AddColumn(Coordinates, "_Key", each fnKey([Municipality]), type text),
+		    AliasKeys = Table.Join(
+		        Table.AddColumn(Aliases, "_Key", each fnKey([Alias]), type text), {"OfficialMunicipality"},
+		        Coordinates, {"Municipality"}
+		    ),
+		    Keys = Table.Distinct(
+		        Table.Combine({
+		            OfficialKeys,
+		            Table.SelectColumns(AliasKeys, {"_Key", "Municipality", "Department", "Latitude", "Longitude"})
+		        }),
+		        {"_Key"}
+		    ),
+		
+		    // Keywords sorted from the longest to the shortest (buffered: not recomputed on every call)
+		    SortedKeys = List.Buffer(List.Sort(Keys[_Key], each - Text.Length(_))),
+		    // Each keyword with its municipality, department and coordinates (buffered)
+		    Data = Table.Buffer(Table.SelectColumns(Keys, {"_Key", "Municipality", "Department", "Latitude", "Longitude"})),
+		    ByKey = Record.FromList(Table.ToRecords(Table.SelectColumns(Data, {"Municipality", "Department", "Latitude", "Longitude"})), Data[_Key]),
+		
+		    // Search text: punctuation -> spaces, normalized, with spaces at both ends to match whole words (" CALI ")
+		    fnSearchText = (t as text) as text =>
+		        " " & fnKey(
+		            List.Accumulate({"(", ")", "-", ",", ".", "/"}, t, (acc, c) => Text.Replace(acc, c, " "))
+		        ) & " ",
+		
+		    // Priority part: inside the last "( )", or after the last "-", or the whole text
+		    fnPriorityPart = (description as nullable text) as nullable text =>
+		        if description = null then null
+		        else if Text.Contains(description, "(") and Text.Contains(description, ")")
+		            then Text.Trim(Text.BeforeDelimiter(Text.AfterDelimiter(description, "(", {0, RelativePosition.FromEnd}), ")"))
+		        else if Text.Contains(description, "-")
+		            then Text.Trim(Text.AfterDelimiter(description, "-", {0, RelativePosition.FromEnd}))
+		        else Text.Trim(description),
+		
+		    // First keyword (longest first) that appears as a whole word in the text; null if none
+		    fnFindKey = (text as nullable text) as nullable text =>
+		        if text = null then null
+		        else
+		            let t = fnSearchText(text)
+		            in List.First(List.Select(SortedKeys, each Text.Contains(t, " " & _ & " ")), null),
+		
+		    // Look first in the priority part of the text and, if there is no municipality there, in the whole text
+		    fnMunicipality = (text as nullable text) as nullable record =>
+		        let
+		            inPart = fnFindKey(fnPriorityPart(text)),
+		            key = if inPart <> null then inPart else fnFindKey(text)
+		        in
+		            if key = null then null else Record.FieldOrDefault(ByKey, key, null)
+		in
+		    fnMunicipality
+	lineageTag: 06f861c2-d7a1-49d5-8409-3e527da0bfc1
+	queryGroup: '2. Functions'
+
+	annotation PBI_ResultType = Function
+
+/// Single point that opens the order files: one row per file (parameters DataRoot and OrderFiles).
+expression OrdersSource =
+		let
+		    // ---------- Files ----------
+		    // File names from the OrderFiles parameter (separated by ";"), without extra spaces or empty items
+		    Names = List.Select(List.Transform(Text.Split(OrderFiles, ";"), Text.Trim), each _ <> ""),
+		    // Without any file there is no data: stop with a clear message
+		    ValidNames =
+		        if List.IsEmpty(Names) then error Error.Record(
+		            "No order files",
+		            "The OrderFiles parameter is empty. Type the names of the order files separated by semicolons.")
+		        else Names,
+		
+		    // ---------- Reading one file ----------
+		    fnReadOrderFile = (name as text) as table =>
+		        let
+		            // .parquet is read as a typed table; anything else is read as CSV (text columns)
+		            isParquet = Text.EndsWith(Text.Lower(name), ".parquet"),
+		            // Parquet.Document needs the whole file in memory
+		            Source = if isParquet then Parquet.Document(Binary.Buffer(fnReadFile(name))) else fnReadCsv(name),
+		            // M is lazy: the read is forced inside try to catch a file that does not open
+		            Opened = try Table.RowCount(Source),
+		            Checked =
+		                if Opened[HasError] then error Error.Record(
+		                    "Order file not found",
+		                    "Could not open '" & name & "' in DataRoot. Check the DataRoot and OrderFiles parameters.")
+		                else Source
+		        in
+		            Checked,
+		
+		    // ---------- One row per file ----------
+		    // File Position 1 = the first file of the list (the oldest)
+		    Files = #table(
+		        type table [File = text, #"File Position" = Int64.Type],
+		        List.Transform(List.Positions(ValidNames), each {ValidNames{_}, _ + 1})),
+		    WithData = Table.AddColumn(Files, "Data", each fnReadOrderFile([File]), type table)
+		in
+		    WithData
+	lineageTag: 2f9bb9f4-aac7-47f1-9d83-ce0328bcb5be
+	queryGroup: '3. Staging'
+
+	annotation PBI_ResultType = Table
+
+/// Columns the dashboard expects and the column of each order file that matches each one (empty = the file does not have it).
+expression ExpectedColumns =
+		let
+		    Source = OrdersSource,
+		
+		    // ---------- Columns the dashboard expects ----------
+		    // Fixed list: column name and whether it is required (the list does not depend on the data)
+		    Expected = #table(
+		        type table [ColumnName = text, Required = logical],
+		        {
+		            {"Request ID", false},
+		            {"Order ID", true},
+		            {"Order Type", true},
+		            {"Order Created At", true},
+		            {"Order Assigned At", false},
+		            {"Order Closed At", false},
+		            {"Closure Reason Code", false},
+		            {"Closure Reason", false},
+		            {"Order Status Code", false},
+		            {"Order Status", false},
+		            {"Location Code", false},
+		            {"Location Name", false},
+		            {"Work Unit Code", false},
+		            {"Work Unit Name", false},
+		            {"Closed By Name", false}
+		        }),
+		
+		    // ---------- Match with the headers of each file ----------
+		    // Resolves the expected columns against the headers of ONE file
+		    fnResolve = (file as text, position as number, data as table) as table =>
+		        let
+		            SourceNames = List.Buffer(Table.ColumnNames(data)),
+		            SourceKeys = List.Buffer(List.Transform(SourceNames, fnKey)),
+		            // Header of the file that equals an expected name (null if the file does not have it)
+		            fnFindColumn = (name as text) as nullable text =>
+		                let pos = List.PositionOf(SourceKeys, fnKey(name)) in if pos < 0 then null else SourceNames{pos},
+		            // Each expected column gets the column of the file that matches it
+		            Resolved = Table.AddColumn(Expected, "SourceColumn", each fnFindColumn([ColumnName]), type nullable text),
+		            // Required columns the file does not have
+		            Missing = Table.SelectRows(Resolved, each [Required] and [SourceColumn] = null),
+		            // If a required column is missing the refresh stops with a message that names the file and the columns
+		            Validated =
+		                if Table.IsEmpty(Missing) then Resolved
+		                else error Error.Record(
+		                    "Required columns are missing",
+		                    "Required columns are missing in file " & file & ": " & Text.Combine(Missing[ColumnName], "; ")),
+		            WithFile = Table.AddColumn(Table.AddColumn(Validated,
+		                "File", each file, type text),
+		                "File Position", each position, Int64.Type)
+		        in
+		            Table.SelectColumns(WithFile, {"File", "File Position", "ColumnName", "Required", "SourceColumn"}),
+		
+		    // One resolution per file, all together; the table stays in memory
+		    PerFile = List.Transform(Table.ToRecords(Source), each fnResolve(_[File], _[#"File Position"], _[Data])),
+		    Combined = Table.Combine(PerFile),
+		    Final = Table.Buffer(Table.TransformColumnTypes(Combined, {
+		        {"File", type text}, {"File Position", Int64.Type}, {"ColumnName", type text},
+		        {"Required", type logical}, {"SourceColumn", type text}}))
+		in
+		    Final
+	lineageTag: dc8c1508-9347-4d05-a811-f4275b02e7fa
+	queryGroup: '3. Staging'
+
+	annotation PBI_ResultType = Table
+
+/// Order base (all files together) with columns by name, types and tolerant dates, plus File Position.
+expression OrdersRead =
+		let
+		    Source = OrdersSource,
+		
+		    // ---------- 1. Columns by name, file by file ----------
+		    Columns = ExpectedColumns,
+		    // Names of the expected columns (once, not per file)
+		    ColumnNames = List.Distinct(Columns[ColumnName]),
+		    // One file: select and rename ITS columns and add the ones it does not have as empty
+		    fnReadOne = (file as text, position as number, data as table) as table =>
+		        let
+		            // Column resolution of this file (ExpectedColumns)
+		            Resolution = Table.SelectRows(Columns, each [File] = file),
+		            // Columns the file has: selected and renamed to the model name
+		            Found = Table.SelectRows(Resolution, each [SourceColumn] <> null),
+		            Selected = Table.SelectColumns(data, Found[SourceColumn]),
+		            Renamed = Table.RenameColumns(Selected, List.Select(List.Zip({Found[SourceColumn], Found[ColumnName]}), each _{0} <> _{1})),
+		            // Columns the file does not have are added empty (null), one by one
+		            WithMissing = List.Accumulate(
+		                Table.SelectRows(Resolution, each [SourceColumn] = null)[ColumnName],
+		                Renamed,
+		                (t, c) => Table.AddColumn(t, c, each null)),
+		            WithFile = Table.AddColumn(WithMissing, "File Position", each position, Int64.Type)
+		        in
+		            WithFile,
+		    // All files, one below the other
+		    Combined = Table.Combine(List.Transform(Table.ToRecords(Source), each fnReadOne(_[File], _[#"File Position"], _[Data]))),
+		
+		    // ---------- 2 and 3. Tolerant conversions (shared functions fnText, fnInteger, fnDate and fnDateTime) ----------
+		    // Creation and closure with time (the KPI baseline cuts at an exact time)
+		    WithTimes = Table.AddColumn(Table.AddColumn(Combined,
+		        "Order Created DateTime", each fnDateTime([Order Created At]), type nullable datetime),
+		        "Order Closed DateTime", each fnDateTime([Order Closed At]), type nullable datetime),
+		
+		    // The 3 dates of the order (read tolerantly)
+		    DateColumns = {"Order Created At", "Order Assigned At", "Order Closed At"},
+		
+		    // Types: integers, dates (no time) and text
+		    IntegerColumns = {"Request ID", "Order ID", "Order Status Code"},
+		    TextColumns = List.Difference(ColumnNames, IntegerColumns & DateColumns),
+		    Typed = Table.TransformColumns(WithTimes,
+		        List.Transform(IntegerColumns, each {_, fnInteger, Int64.Type})
+		        & List.Transform(DateColumns, each {_, fnDate, type date})
+		        & List.Transform(TextColumns, each {_, (v) => fnText(v), type text})),
+		
+		    // Final column order
+		    Ordered = Table.ReorderColumns(Typed, ColumnNames
+		        & {"Order Created DateTime", "Order Closed DateTime", "File Position"})
+		in
+		    Ordered
+	lineageTag: 7ada2b2f-cc9d-45d9-a6a2-9e6388146436
+	queryGroup: '3. Staging'
+
+	annotation PBI_ResultType = Table
+
+/// One row per order, no repeats (the most advanced row wins; on a tie, the newest file). Only the work types of the catalog (config_work_types.csv).
+expression OrdersUnique =
+		let
+		    Source = OrdersRead,
+		    // Work type codes of the catalog
+		    CatalogTypes = List.Buffer(Dim_WorkType[WorkTypeKey]),
+		    // 1 and 2: only orders with a number and of a work type of the catalog
+		    WithOrder = Table.SelectRows(Source, each [Order ID] <> null and List.Contains(CatalogTypes, [Order Type])),
+		    // 3: per order, the most advanced first (higher status and more recent dates; tie: newest file)
+		    MostAdvancedFirst = Table.Buffer(Table.Sort(WithOrder, {
+		        {"Order ID", Order.Ascending},
+		        {"Order Status Code", Order.Descending},
+		        {"Order Closed At", Order.Descending},
+		        {"Order Assigned At", Order.Descending},
+		        {"Order Created At", Order.Descending},
+		        {"File Position", Order.Descending}
+		    })),
+		    // Table.Distinct keeps the first row of each order, that is, the most advanced one.
+		    // Buffered: every loaded table walks this query several times (links, dimensions); without the buffer each walk would read and sort the files again
+		    Unique = Table.Buffer(Table.Distinct(MostAdvancedFirst, {"Order ID"}))
+		in
+		    Unique
+	lineageTag: c5feb9be-2b0e-4fc9-9bfe-ca2926db5f5f
+	queryGroup: '3. Staging'
+
+	annotation PBI_ResultType = Table
+
+/// Orders of the permit work types (group Filing, Review or Standalone), from OrdersUnique: base of the permit rules.
+expression OrdersPermits =
+		let
+		    Source = OrdersUnique,
+		    // Codes of the permit work types (group Filing, Review or Standalone)
+		    PermitTypes = List.Buffer(Table.SelectRows(Dim_WorkType, each [Is Permit Work Type])[WorkTypeKey]),
+		    PermitsOnly = Table.SelectRows(Source, each List.Contains(PermitTypes, [Order Type]))
+		in
+		    PermitsOnly
+	lineageTag: 5db0d755-2811-421e-b075-be5337de5d80
+	queryGroup: '3. Staging'
+
+	annotation PBI_ResultType = Table
+
+/// Closure reasons of config_closure_reasons.csv: code, labels in both languages and the result of each reason.
+expression ClosureReasonConfig =
+		let
+		    // ---------- Reading config_closure_reasons.csv ----------
+		    Source = fnReadCsv("config_closure_reasons.csv"),
+		    Typed = Table.TransformColumns(Source, {
+		        {"Closure Reason Code", each fnText(_), type text}, {"Closure Reason", each fnText(_), type text},
+		        {"Reason ES", each fnText(_), type text}, {"Reason EN", each fnText(_), type text},
+		        {"Result", each fnText(_), type text}, {"Result ES", each fnText(_), type text}, {"Result EN", each fnText(_), type text}}),
+		    Renamed = Table.RenameColumns(Typed, {{"Closure Reason Code", "ClosureReasonKey"}, {"Closure Reason", "SourceText"}, {"Result", "ResultKey"}}),
+		    // A reason without a result stays visible as "Undefined" (to be completed in the CSV)
+		    WithResult = Table.TransformColumns(Renamed, {
+		        {"ResultKey", each if _ = null then "Undefined" else _, type text},
+		        {"Result ES", each if _ = null then "Por definir" else _, type text},
+		        {"Result EN", each if _ = null then "To be defined" else _, type text}}),
+		    // ReasonLookup = reason text normalized (fnKey) to match by text; repeated texts are removed
+		    WithLookup = Table.AddColumn(Table.SelectRows(WithResult, each [ClosureReasonKey] <> null), "ReasonLookup", each fnKey([SourceText]), type text),
+		    Distinct = Table.Distinct(WithLookup, {"ReasonLookup"}),
+		    // Small table queried several times by fnClosureResult and other queries: buffered so the file is not read again
+		    Final = Table.Buffer(Distinct)
+		in
+		    Final
+	lineageTag: e6ee0523-a06c-4bb8-87f6-eee9c5f6bbd0
+	queryGroup: '3. Staging'
+
+	annotation PBI_ResultType = Table
+
+/// Columns Order ID and Km of config_order_km.csv: kilometres of each national road permit order.
+expression OrderKm =
+		let
+		    Source = fnReadCsv("config_order_km.csv"),
+		    Columns = Table.SelectColumns(Table.TransformColumnNames(Source, Text.Trim), {"Order ID", "Km"}, MissingField.UseNull),
+		    Typed = Table.TransformColumns(Columns, {
+		        {"Order ID", fnInteger, Int64.Type},
+		        {"Km", fnNumber, type number}
+		    }),
+		    // Valid rows: with order and with km (0 or more); a repeated order takes the first row
+		    Valid = Table.Distinct(Table.SelectRows(Typed, each [Order ID] <> null and [Km] <> null and [Km] >= 0), {"Order ID"})
+		in
+		    Valid
+	lineageTag: b1a94303-58d0-4d79-a13b-325d99b7edf9
+	queryGroup: '3. Staging'
+
+	annotation PBI_ResultType = Table
+
+/// List of requests outside the data scope (their first permit order is a review): read by Fact_Orders and Fact_Permits.
+expression RequestsOutsideData =
+		let
+		    // Work type code -> group key (Filing, Review or Standalone)
+		    GroupOfType = Record.FromList(Dim_WorkType[Group Key], Dim_WorkType[WorkTypeKey]),
+		    // First permit order (OrdersPermits) of each request
+		    FirstPermitOrderFirst = Table.Buffer(Table.Sort(
+		        Table.AddColumn(Table.SelectRows(Table.SelectColumns(OrdersPermits, {"Request ID", "Order Type", "Order Created DateTime", "Order ID", "File Position"}), each [Request ID] <> null),
+		            "_NoDate", each [Order Created DateTime] = null, type logical),
+		        {{"_NoDate", Order.Ascending}, {"Order Created DateTime", Order.Ascending}, {"Order ID", Order.Ascending}, {"File Position", Order.Descending}})),
+		    FirstOfRequest = Table.Distinct(FirstPermitOrderFirst, {"Request ID"}),
+		    // Requests whose first permit order is a review: a filing must exist before it, and it is not in the data
+		    OutsideList = Table.SelectRows(FirstOfRequest, each [Order Type] <> null and Record.FieldOrDefault(GroupOfType, [Order Type], null) = "Review")[Request ID],
+		    // Buffered list: several queries read it and search it many times
+		    Final = List.Buffer(List.Sort(OutsideList))
+		in
+		    Final
+	lineageTag: 01fb9a82-88a3-436a-8213-52696dcd3dbb
+	queryGroup: '3. Staging'
+
+	annotation PBI_ResultType = List

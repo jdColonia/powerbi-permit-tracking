@@ -1,0 +1,26 @@
+/// Date of the data snapshot (data/snapshot.csv). Read by the [Today] measure.
+table Info_Refresh
+	isHidden
+	lineageTag: 4a62b1ef-eb1d-4d18-b47d-62f6b7d0ea2a
+
+	column 'Snapshot Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 896953c4-30cf-4ff3-9187-7c6e00f10a0a
+		summarizeBy: none
+		sourceColumn: Snapshot Date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Info_Refresh = m
+		mode: import
+		queryGroup: '6. Support'
+		source =
+				let
+				    Day = SnapshotDate
+				in
+				    #table(type table [#"Snapshot Date" = datetime], {{DateTime.From(Day)}})
+
+	annotation PBI_ResultType = Table

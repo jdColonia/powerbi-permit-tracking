@@ -1,0 +1,102 @@
+/// Expected reduction of each backlog indicator (config_targets.csv).
+table Targets
+	lineageTag: 1a6cfa97-3311-4cb0-a4a9-56a0bef7664c
+
+	column Key
+		dataType: string
+		lineageTag: 6ff3da11-1346-4dfb-bbf4-dd99fdd57d25
+		summarizeBy: none
+		sourceColumn: Key
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Min Reduction'
+		dataType: double
+		formatString: 0%
+		lineageTag: 8442e8c9-85b2-46ca-95e7-197040ea90d6
+		summarizeBy: none
+		sourceColumn: Min Reduction
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Max Reduction'
+		dataType: double
+		formatString: 0%
+		lineageTag: c522f0ce-6ae3-477a-afc8-cc8e4bce04a2
+		summarizeBy: none
+		sourceColumn: Max Reduction
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Date and time of the baseline cutoff of the indicator.
+	column 'Baseline Cutoff'
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 3e2ea945-d06f-4ba5-a933-a292513b01ff
+		summarizeBy: none
+		sourceColumn: Baseline Cutoff
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Last creation date that counts in the baseline (empty = the cutoff one).
+	column 'Baseline Created Until'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 9fd51477-3b37-4274-8f34-97f6024fc75f
+		summarizeBy: none
+		sourceColumn: Baseline Created Until
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Baseline typed by hand (empty = it is computed).
+	column 'Fixed Baseline'
+		dataType: double
+		formatString: #,0.#
+		lineageTag: 28096feb-29b8-4cf7-93c3-4f1ce1b238cb
+		summarizeBy: none
+		sourceColumn: Fixed Baseline
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Midpoint of the reduction range.
+	column 'Target Reduction'
+		dataType: double
+		formatString: 0.0%
+		lineageTag: 35124464-86cc-4174-bf90-0234fca67054
+		summarizeBy: none
+		sourceColumn: Target Reduction
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Targets = m
+		mode: import
+		queryGroup: '6. Support'
+		source =
+				let
+				    // ---------- config_targets.csv ----------
+				    Source = Table.TransformColumnNames(fnReadCsv("config_targets.csv"), Text.Trim),
+				
+				    // ---------- Types ----------
+				    Columns = Table.SelectColumns(Source, {"Key", "Min Reduction", "Max Reduction", "Baseline Cutoff", "Baseline Created Until", "Fixed Baseline"}),
+				    Typed = Table.TransformColumns(Columns, {
+				        {"Key", each fnText(_), type text},
+				        {"Min Reduction", fnNumber, type number},
+				        {"Max Reduction", fnNumber, type number},
+				        {"Baseline Cutoff", fnDateTime, type datetime},
+				        {"Baseline Created Until", each let d = fnDateTime(_) in if d = null then null else Date.From(d), type date},
+				        {"Fixed Baseline", fnNumber, type number}
+				    }),
+				    // Without a Key there is no indicator
+				    NonEmpty = Table.SelectRows(Typed, each [Key] <> null),
+
+				    // ---------- Target ----------
+				    // [Target Reduction] = midpoint of the reduction range (the measure computes Target = baseline x (1 - Target Reduction))
+				    WithTarget = Table.AddColumn(NonEmpty, "Target Reduction", each
+				        if [Min Reduction] = null or [Max Reduction] = null then null else ([Min Reduction] + [Max Reduction]) / 2,
+				        type number)
+				in
+				    WithTarget
+
+	annotation PBI_ResultType = Table

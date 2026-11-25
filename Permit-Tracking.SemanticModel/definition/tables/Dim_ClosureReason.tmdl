@@ -1,0 +1,120 @@
+/// Closure reasons (distinct from the data) with their result (config_closure_reasons.csv) in both languages.
+table Dim_ClosureReason
+	lineageTag: 866e8521-de0e-4a82-a260-8c2df722e326
+
+	column ClosureReasonKey
+		dataType: string
+		isHidden
+		lineageTag: 5bc0b9ed-af08-45be-8ecc-072b3ce61815
+		summarizeBy: none
+		sourceColumn: ClosureReasonKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Closure Reason ES'
+		dataType: string
+		lineageTag: 65e569ae-8e3e-4095-b088-835fa22f8326
+		summarizeBy: none
+		sourceColumn: Closure Reason ES
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Closure Reason EN'
+		dataType: string
+		lineageTag: b199e494-43a3-554c-b08f-3f725a6bd4ff
+		summarizeBy: none
+		sourceColumn: Closure Reason EN
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Language-independent result: Granted, Denied, NoResponse, AdminClosure, Returned, Completed, Undefined or Other. DAX rules use this column.
+	column 'Result Key'
+		dataType: string
+		isHidden
+		lineageTag: c4a281f5-db64-486b-aaf5-bd20fbef6e47
+		summarizeBy: none
+		sourceColumn: Result Key
+		sortByColumn: 'Result Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Result ES'
+		dataType: string
+		lineageTag: 884d25fc-81c6-5a11-bb38-879c052e328d
+		summarizeBy: none
+		sourceColumn: Result ES
+		sortByColumn: 'Result Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Result EN'
+		dataType: string
+		lineageTag: 8a873d7d-f3f5-5f25-bd7d-66b35462d51e
+		summarizeBy: none
+		sourceColumn: Result EN
+		sortByColumn: 'Result Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Result Order'
+		dataType: int64
+		isHidden
+		lineageTag: 9c53bb12-1b2f-4fb2-9a38-4e96fa54a9bd
+		summarizeBy: none
+		sourceColumn: Result Order
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Dim_ClosureReason = m
+		mode: import
+		queryGroup: '4. Dimensions'
+		source =
+				let
+				    Source = OrdersUnique,
+				
+				    Columns = Table.SelectColumns(Source, {"Closure Reason Code", "Closure Reason"}),
+				
+				    // No blank reason (open orders have no closure reason)
+				    NonBlank = Table.SelectRows(Columns, each [Closure Reason Code] <> null),
+				
+				    Distinct = Table.Distinct(NonBlank, {"Closure Reason Code"}),
+				
+				    Renamed = Table.RenameColumns(Distinct, {
+				        {"Closure Reason Code", "ClosureReasonKey"},
+				        {"Closure Reason", "SourceText"}
+				    }),
+				
+				    // Result of each reason: by code and, if it does not match, by text; if neither, "Other"
+				    fnResult = fnClosureResult(ClosureReasonConfig),
+				    WithResult = Table.AddColumn(Renamed, "Result Key", each
+				        let r = fnResult([ClosureReasonKey], [SourceText]) in if r = null then "Other" else r, type text),
+				
+				    // Labels of the reason in both languages: from the configuration by code; a reason that is not in the catalog shows as unclassified
+				    ReasonLabels = Table.SelectColumns(ClosureReasonConfig, {"ClosureReasonKey", "Reason ES", "Reason EN"}),
+				    WithLabels = Table.ExpandTableColumn(
+				        Table.NestedJoin(WithResult, {"ClosureReasonKey"}, ReasonLabels, {"ClosureReasonKey"}, "L", JoinKind.LeftOuter),
+				        "L", {"Reason ES", "Reason EN"}, {"_ES", "_EN"}),
+				    WithReason = Table.AddColumn(Table.AddColumn(WithLabels,
+				        "Closure Reason ES", each if [_ES] <> null then [_ES] else "Motivo sin clasificar", type text),
+				        "Closure Reason EN", each if [_EN] <> null then [_EN] else "Unclassified reason", type text),
+				
+				    // Labels of the result in both languages (from the configuration; "Other" is added here)
+				    ResultLabels = Table.Distinct(Table.Combine({
+				        Table.SelectColumns(ClosureReasonConfig, {"ResultKey", "Result ES", "Result EN"}),
+				        #table(type table [ResultKey = text, #"Result ES" = text, #"Result EN" = text], {{"Other", "Otro", "Other"}})
+				    }), {"ResultKey"}),
+				    WithResultLabels = Table.ExpandTableColumn(
+				        Table.NestedJoin(WithReason, {"Result Key"}, ResultLabels, {"ResultKey"}, "R", JoinKind.LeftOuter),
+				        "R", {"Result ES", "Result EN"}),
+				    // Order of the results in the charts
+				    ResultOrder = {"Granted", "Denied", "NoResponse", "AdminClosure", "Returned", "Completed"},
+				    WithOrder = Table.AddColumn(WithResultLabels, "Result Order", each
+				        let p = List.PositionOf(ResultOrder, [Result Key]) in if p < 0 then 99 else p + 1, Int64.Type),
+				    Selected = Table.SelectColumns(WithOrder, {"ClosureReasonKey", "Closure Reason ES", "Closure Reason EN", "Result Key", "Result ES", "Result EN", "Result Order"}),
+				    Sorted = Table.Sort(Selected, {{"ClosureReasonKey", Order.Ascending}}),
+				    // Small table used by several queries: buffered so it is not recomputed (and the files are not read again) on every walk
+				    Final = Table.Buffer(Sorted)
+				in
+				    Final
+
+	annotation PBI_ResultType = Table

@@ -1,0 +1,154 @@
+/// Calendar (range from the dates of the orders). Active relationship: closure date; inactive: creation date.
+table Dim_Calendar
+	dataCategory: Time
+	lineageTag: a4afb19c-4a26-4874-8f0a-727dd01bbd93
+
+	column Date
+		dataType: dateTime
+		isUnique
+		formatString: Short Date
+		lineageTag: 5929f16a-2325-42fe-a051-556f35c0225c
+		summarizeBy: none
+		sourceColumn: Date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	column Year
+		dataType: int64
+		lineageTag: 7bfd60d8-24f2-46b3-ab00-714c41586800
+		summarizeBy: none
+		sourceColumn: Year
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Month Number'
+		dataType: int64
+		lineageTag: 9129c425-e5cc-4a03-b1f6-17ece6a9f7c2
+		summarizeBy: none
+		sourceColumn: Month Number
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Month Name ES'
+		dataType: string
+		lineageTag: 57ac02bb-082c-4f5e-bcd3-087994f19f3b
+		summarizeBy: none
+		sourceColumn: Month Name ES
+		sortByColumn: 'Month Number'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Month Name EN'
+		dataType: string
+		lineageTag: 23ef4edb-9f00-5568-848f-5d0a80f255c6
+		summarizeBy: none
+		sourceColumn: Month Name EN
+		sortByColumn: 'Month Number'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Month Year Order'
+		dataType: int64
+		isHidden
+		lineageTag: cf2619c6-34a1-47c6-982e-89fb00fac668
+		summarizeBy: none
+		sourceColumn: Month Year Order
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Short month label for the axes ("May-26").
+	column 'Month ES'
+		dataType: string
+		lineageTag: 6eb5614b-151a-41f9-bbb2-d6a188b26ac4
+		summarizeBy: none
+		sourceColumn: Month ES
+		sortByColumn: 'Month Year Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Short month label for the axes ("May-26").
+	column 'Month EN'
+		dataType: string
+		lineageTag: 63714697-5f0f-5bee-9651-26d03b244dac
+		summarizeBy: none
+		sourceColumn: Month EN
+		sortByColumn: 'Month Year Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Quarter label with the year for the Backlog page axes ("T1-26").
+	column 'Quarter Year ES'
+		dataType: string
+		lineageTag: 6ba7c345-3c86-493e-8714-371f5bf6bc5c
+		summarizeBy: none
+		sourceColumn: Quarter Year ES
+		sortByColumn: 'Quarter Year Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Quarter label with the year for the Backlog page axes ("Q1-26").
+	column 'Quarter Year EN'
+		dataType: string
+		lineageTag: f4a31b97-66f6-53c0-b5ff-8d7e6e065e84
+		summarizeBy: none
+		sourceColumn: Quarter Year EN
+		sortByColumn: 'Quarter Year Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Quarter Year Order'
+		dataType: int64
+		isHidden
+		lineageTag: cb825623-a1cc-46ec-af10-2730b8295fac
+		summarizeBy: none
+		sourceColumn: Quarter Year Order
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Dim_Calendar = m
+		mode: import
+		queryGroup: '4. Dimensions'
+		source =
+				let
+				    // ---------- Range from the data ----------
+				    Dates = List.RemoveNulls(
+				        OrdersUnique[Order Created At] & OrdersUnique[Order Assigned At] & OrdersUnique[Order Closed At]),
+				    // SnapshotDate = shared query (folder 2. Functions)
+				    Today = SnapshotDate,
+				    // First day of the year of the oldest date and last day of the year after the most recent one (or the snapshot)
+				    Minimum = if List.IsEmpty(Dates) then Today else List.Min(Dates),
+				    Maximum = List.Max(Dates & {Today}),
+				    StartDate = #date(Date.Year(Minimum), 1, 1),
+				    EndDate = #date(Date.Year(Maximum) + 1, 12, 31),
+				
+				    // ---------- Date table ----------
+				    DayCount = Duration.Days(EndDate - StartDate) + 1,
+				    DateList = List.Dates(StartDate, DayCount, #duration(1, 0, 0, 0)),
+				    BaseTable = Table.FromList(DateList, Splitter.SplitByNothing(), {"Date"}),
+				    ChangedTypes = Table.TransformColumnTypes(BaseTable, {{"Date", type date}}),
+				
+				    // Fixed names in both languages (no dependence on the regional settings)
+				    MonthNamesES = {"Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"},
+				    MonthNamesEN = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"},
+				    MonthShortES = {"Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"},
+				    MonthShortEN = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"},
+				
+				    // Calendar columns: year and month
+				    Year = Table.AddColumn(ChangedTypes, "Year", each Date.Year([Date]), Int64.Type),
+				    MonthNumber = Table.AddColumn(Year, "Month Number", each Date.Month([Date]), Int64.Type),
+				    MonthNameES = Table.AddColumn(MonthNumber, "Month Name ES", each MonthNamesES{Date.Month([Date]) - 1}, type text),
+				    MonthNameEN = Table.AddColumn(MonthNameES, "Month Name EN", each MonthNamesEN{Date.Month([Date]) - 1}, type text),
+				    MonthYearOrder = Table.AddColumn(MonthNameEN, "Month Year Order", each Date.Year([Date]) * 100 + Date.Month([Date]), Int64.Type),
+				
+				    // Short month label for the axes ("May-26") and quarter label with the year ("T1-26" / "Q1-26") and its sort order (20261)
+				    MonthES = Table.AddColumn(MonthYearOrder, "Month ES", each MonthShortES{Date.Month([Date]) - 1} & "-" & Text.End(Text.From(Date.Year([Date])), 2), type text),
+				    MonthEN = Table.AddColumn(MonthES, "Month EN", each MonthShortEN{Date.Month([Date]) - 1} & "-" & Text.End(Text.From(Date.Year([Date])), 2), type text),
+				    QuarterYearES = Table.AddColumn(MonthEN, "Quarter Year ES", each "T" & Text.From(Date.QuarterOfYear([Date])) & "-" & Text.End(Text.From(Date.Year([Date])), 2), type text),
+				    QuarterYearEN = Table.AddColumn(QuarterYearES, "Quarter Year EN", each "Q" & Text.From(Date.QuarterOfYear([Date])) & "-" & Text.End(Text.From(Date.Year([Date])), 2), type text),
+				    QuarterYearOrder = Table.AddColumn(QuarterYearEN, "Quarter Year Order", each Date.Year([Date]) * 10 + Date.QuarterOfYear([Date]), Int64.Type)
+				in
+				    QuarterYearOrder
+
+	annotation PBI_ResultType = Table

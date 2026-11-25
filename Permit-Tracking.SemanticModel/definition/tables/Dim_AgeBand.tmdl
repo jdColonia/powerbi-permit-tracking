@@ -1,0 +1,76 @@
+/// Disconnected table for the axis of the age charts (months since creation).
+table Dim_AgeBand
+	lineageTag: 67d21d6d-2f00-4bd1-af76-cd587baad414
+
+	column 'Age Band ES'
+		dataType: string
+		lineageTag: 11295c49-8091-4d40-95cd-f5e7b7abad38
+		summarizeBy: none
+		sourceColumn: Age Band ES
+		sortByColumn: 'Age Band Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Age Band EN'
+		dataType: string
+		lineageTag: bee990f0-5328-5b5f-ba62-e6951947d2e9
+		summarizeBy: none
+		sourceColumn: Age Band EN
+		sortByColumn: 'Age Band Order'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Age Band Order'
+		dataType: int64
+		isHidden
+		lineageTag: 869166a4-790c-41b7-923c-d06d8f5759a3
+		summarizeBy: none
+		sourceColumn: Age Band Order
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'From Days'
+		dataType: int64
+		isHidden
+		lineageTag: 1bd04003-c619-4e82-a89c-645f660ad981
+		summarizeBy: none
+		sourceColumn: From Days
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'To Days'
+		dataType: int64
+		isHidden
+		lineageTag: 6976eb75-d7d3-4d5b-95f1-894c60a33eda
+		summarizeBy: none
+		sourceColumn: To Days
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Dim_AgeBand = m
+		mode: import
+		queryGroup: '4. Dimensions'
+		source =
+				let
+				    // Age bands in months since creation: [From Days, To Days)
+				    Source = #table(
+				        {"Age Band ES", "Age Band EN", "Age Band Order", "From Days", "To Days"},
+				        {
+				            {"0 a 3",      "0 to 3",   1, 0,   91},
+				            {"3 a 6",      "3 to 6",   2, 91,  183},
+				            {"6 a 12",     "6 to 12",  3, 183, 365},
+				            {"12 a 24",    "12 to 24", 4, 365, 730},
+				            {"Más de 24",  "Over 24",  5, 730, null}
+				        }
+				    ),
+				    ChangedTypes = Table.TransformColumnTypes(Source, {
+				        {"Age Band ES", type text},
+				        {"Age Band EN", type text},
+				        {"Age Band Order", Int64.Type},
+				        {"From Days", Int64.Type},
+				        {"To Days", Int64.Type}
+				    })
+				in
+				    ChangedTypes
+
+	annotation PBI_ResultType = Table

@@ -1,0 +1,25 @@
+/// Disconnected table with the report languages ("es", "en"). The report-level filter selects the row and the text measures switch on it.
+table Language
+	isHidden
+	lineageTag: f4dbd84b-16aa-5c8a-af92-b00b2593c8b3
+
+	/// Language code: es or en.
+	column Code
+		dataType: string
+		lineageTag: 4bf78e38-415b-5c12-acd4-cbe920681f28
+		summarizeBy: none
+		sourceColumn: Code
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Language = m
+		mode: import
+		queryGroup: '6. Support'
+		source =
+				let
+				    // One row per report language (no relationships: the report filter picks the row)
+				    Source = #table(type table [Code = text], {{"es"}, {"en"}})
+				in
+				    Source
+
+	annotation PBI_ResultType = Table

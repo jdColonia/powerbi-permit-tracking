@@ -1,0 +1,377 @@
+/// Fact: one row = one order (work types of config_work_types.csv). Includes the permit cost.
+table Fact_Orders
+	lineageTag: e3de186d-9e5c-4b1b-826c-20a01ada7727
+
+	column 'Order ID'
+		dataType: int64
+		formatString: 0
+		lineageTag: 71b677ba-4de1-491d-b6d5-178396a3f4c4
+		summarizeBy: none
+		sourceColumn: Order ID
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Request ID'
+		dataType: int64
+		formatString: 0
+		lineageTag: 3100d4da-3829-4c11-b988-2e9dc6570d54
+		summarizeBy: none
+		sourceColumn: Request ID
+
+		annotation SummarizationSetBy = Automatic
+
+	column WorkTypeKey
+		dataType: string
+		isHidden
+		lineageTag: cb233fae-9f9e-4b61-a349-34dde5d6d7c2
+		summarizeBy: none
+		sourceColumn: WorkTypeKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column OrderStatusKey
+		dataType: int64
+		isHidden
+		lineageTag: ef4985f1-8f28-4a45-a2b6-a582e19834ee
+		summarizeBy: none
+		sourceColumn: OrderStatusKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column ClosureReasonKey
+		dataType: string
+		isHidden
+		lineageTag: 7f5f9fe5-c2d8-4988-858c-af4213142af1
+		summarizeBy: none
+		sourceColumn: ClosureReasonKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column LocationKey
+		dataType: string
+		isHidden
+		lineageTag: f142d1ee-98db-4cdc-9ac7-124808775ebd
+		summarizeBy: none
+		sourceColumn: LocationKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column WorkUnitKey
+		dataType: string
+		isHidden
+		lineageTag: 276c6ac3-9c3b-4ed4-9dfd-943f5f8b4c18
+		summarizeBy: none
+		sourceColumn: WorkUnitKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Created Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 76f3db25-a393-4b76-924d-78c46283dae8
+		summarizeBy: none
+		sourceColumn: Created Date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Assignment Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: dcec0529-d0a1-4719-8757-33d111793945
+		summarizeBy: none
+		sourceColumn: Assignment Date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Closure Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 9a8bfb0d-1031-461f-b3ff-9dfa117c02a0
+		summarizeBy: none
+		sourceColumn: Closure Date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Creation with the time (cutoff of the KPI baselines).
+	column 'Created At'
+		dataType: dateTime
+		isHidden
+		formatString: General Date
+		lineageTag: 9078fd1c-ac48-47a5-ac8c-d1513a246d05
+		summarizeBy: none
+		sourceColumn: Created At
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Closure with the time (cutoff of the KPI baselines).
+	column 'Closed At'
+		dataType: dateTime
+		isHidden
+		formatString: General Date
+		lineageTag: c879aee8-cf51-4051-bf31-5aad51df72b6
+		summarizeBy: none
+		sourceColumn: Closed At
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Closed By Name'
+		dataType: string
+		lineageTag: 384b4be7-ed91-4b27-b712-02265e5da93f
+		summarizeBy: none
+		sourceColumn: Closed By Name
+
+		annotation SummarizationSetBy = Automatic
+
+	/// True if the request of the order starts with a review: its filing is not in the data. The own time measures (day averages of the Open and Closed pages) do not count it; the KPI cards do.
+	column 'Outside Data Scope'
+		dataType: boolean
+		lineageTag: 0c179c27-1ba2-4ae9-b5ab-003e14da88a5
+		summarizeBy: none
+		sourceColumn: Outside Data Scope
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Value of managing the permit before VAT, with the rate in force on the creation date (standalone permits only; administrative closures are not charged).
+	column 'Permit Cost'
+		dataType: double
+		formatString: \C\O\P #,0
+		lineageTag: 9ad53d13-a5bf-49eb-8bb5-ec5ed8735d69
+		summarizeBy: none
+		sourceColumn: Permit Cost
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Permit Cost With VAT'
+		dataType: double
+		formatString: \C\O\P #,0
+		lineageTag: d9950dc2-9136-4c96-a45c-443a995581a3
+		summarizeBy: none
+		sourceColumn: Permit Cost With VAT
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Part of the rate paid when the permit is filed (Filing Payment Rate of Rates), before VAT.
+	column 'Payment At Filing'
+		dataType: double
+		formatString: \C\O\P #,0
+		lineageTag: fa067683-78cd-4158-8cd4-c2d39ce32910
+		summarizeBy: none
+		sourceColumn: Payment At Filing
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Rest of the rate if the order was closed with the permit granted.
+	column 'Payment Delivery Confirmed'
+		dataType: double
+		formatString: \C\O\P #,0
+		lineageTag: 4a338942-0465-4f42-a00b-57386fa51140
+		summarizeBy: none
+		sourceColumn: Payment Delivery Confirmed
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Rest of the rate of an open order: the permit may already be delivered, but the data does not say it.
+	column 'Payment Pending Confirmation'
+		dataType: double
+		formatString: \C\O\P #,0
+		lineageTag: 6cfe335c-0373-4c67-be20-2ed49f22c2ec
+		summarizeBy: none
+		sourceColumn: Payment Pending Confirmation
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Delivery confirmed, Pending confirmation, Initial payment only or No payment.
+	column 'Payment Stage ES'
+		dataType: string
+		lineageTag: 8b8482c7-1010-42fa-94a4-5cb61c2c6b89
+		summarizeBy: none
+		sourceColumn: Payment Stage ES
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Delivery confirmed, Pending confirmation, Initial payment only or No payment.
+	column 'Payment Stage EN'
+		dataType: string
+		lineageTag: 4ba84f80-7d75-5f8c-9cad-f596788839a4
+		summarizeBy: none
+		sourceColumn: Payment Stage EN
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Year of the creation date of the order (axis and filter of the Costs page).
+	column 'Created Year'
+		dataType: int64
+		formatString: 0
+		lineageTag: ad335aad-0a51-4338-bbb4-b01e3e2679a0
+		summarizeBy: none
+		sourceColumn: Created Year
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Created on or after the backlog start date (config_settings.csv).
+	column 'In Backlog KPI'
+		dataType: boolean
+		isHidden
+		lineageTag: e70cb973-0093-4b50-866d-1f522d3f5fbf
+		summarizeBy: none
+		sourceColumn: In Backlog KPI
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Created on or after the handling time start date (config_settings.csv).
+	column 'In Handling KPI'
+		dataType: boolean
+		isHidden
+		lineageTag: 75e91a56-8d3f-4fc6-8616-4839a0a00352
+		summarizeBy: none
+		sourceColumn: In Handling KPI
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Created on or after the permit filing time start date (config_settings.csv).
+	column 'In Municipal KPI'
+		dataType: boolean
+		isHidden
+		lineageTag: 8bf8b835-1ca9-4abc-a494-60c7d7ba0f86
+		summarizeBy: none
+		sourceColumn: In Municipal KPI
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Fact_Orders = m
+		mode: import
+		queryGroup: '5. Facts'
+		source =
+				let
+				    // ---------- Fact columns and keys ----------
+				    // All the orders the dashboard loads (the work types of the catalog; the permit ones are the same as OrdersPermits)
+				    Source = OrdersUnique,
+				
+				    Columns = Table.SelectColumns(Source, {
+				        "Order ID",
+				        "Request ID",
+				        "Order Type",
+				        "Order Status Code",
+				        "Closure Reason Code",
+				        "Location Code",
+				        "Work Unit Code",
+				        "Order Created At",
+				        "Order Assigned At",
+				        "Order Closed At",
+				        "Order Created DateTime",
+				        "Order Closed DateTime",
+				        "Closed By Name"
+				    }),
+				
+				    // Keys are renamed like the column of their dimension (WorkTypeKey, OrderStatusKey...) for the relationships
+				    Renamed = Table.RenameColumns(Columns, {
+				        {"Order Type", "WorkTypeKey"},
+				        {"Order Status Code", "OrderStatusKey"},
+				        {"Closure Reason Code", "ClosureReasonKey"},
+				        {"Location Code", "LocationKey"},
+				        {"Work Unit Code", "WorkUnitKey"},
+				        {"Order Created At", "Created Date"},
+				        {"Order Assigned At", "Assignment Date"},
+				        {"Order Closed At", "Closure Date"},
+				        {"Order Created DateTime", "Created At"},
+				        {"Order Closed DateTime", "Closed At"}
+				    }),
+				
+				    // ---------- Requests outside the data scope ----------
+				    // Requests that start with a review (their filing is not in the data): the list is already in memory (RequestsOutsideData)
+				    OutsideRequests = RequestsOutsideData,
+				    OutsideRecord = Record.FromList(List.Repeat({true}, List.Count(OutsideRequests)), List.Transform(OutsideRequests, Text.From)),
+				    WithOutside = Table.AddColumn(Renamed, "Outside Data Scope", each
+				        [Request ID] <> null and Record.HasFields(OutsideRecord, Text.From([Request ID])), type logical),
+				
+				    // ---------- Cost of managing the permit ----------
+				    // Support data: Permit Group Key of the work type (Dim_WorkType), Result Key of the closure reason
+				    // (Dim_ClosureReason) and Km of the order (OrderKm); Km and VAT stay as helper columns (_Km, _VAT) used to compute the cost
+				    Groups = Table.SelectColumns(Dim_WorkType, {"WorkTypeKey", "Permit Group Key"}),
+				    Results = Table.SelectColumns(Dim_ClosureReason, {"ClosureReasonKey", "Result Key"}),
+				    WithGroup = Table.ExpandTableColumn(Table.NestedJoin(WithOutside, {"WorkTypeKey"}, Groups, {"WorkTypeKey"}, "G", JoinKind.LeftOuter), "G", {"Permit Group Key"}, {"_Group"}),
+				    WithResult = Table.ExpandTableColumn(Table.NestedJoin(WithGroup, {"ClosureReasonKey"}, Results, {"ClosureReasonKey"}, "R", JoinKind.LeftOuter), "R", {"Result Key"}, {"_Result"}),
+				    WithKm = Table.ExpandTableColumn(Table.NestedJoin(WithResult, {"Order ID"}, OrderKm, {"Order ID"}, "K", JoinKind.LeftOuter), "K", {"Km"}, {"_Km"}),
+				    // Rates in memory; fnRate finds the one in force on the creation date of the order
+				    RatesBuffered = Table.Buffer(Rates),
+				    // Rate of a group on a date: the latest one whose validity starts on or before that date (no date:
+				    // the most recent). If the date is before the first validity, the first one is used.
+				    // No group or no rate: null
+				    fnRate = (group as nullable text, onDate as any) as nullable record =>
+				        let
+				            ofGroup = Table.SelectRows(RatesBuffered, each [Permit Group Key] = group),
+				            d = if onDate is datetime then Date.From(onDate) else onDate,
+				            valid = if d = null then ofGroup else Table.SelectRows(ofGroup, each [Valid From] <= d)
+				        in
+				            if group = null or Table.IsEmpty(ofGroup) then null
+				            else if Table.IsEmpty(valid) then Table.First(Table.Sort(ofGroup, {{"Valid From", Order.Ascending}}))
+				            else Table.Last(Table.Sort(valid, {{"Valid From", Order.Ascending}})),
+				    // Cost before VAT, VAT and payment at filing (null if the order is not charged)
+				    WithCost = Table.AddColumn(WithKm, "_C", each
+				        let
+				            // r = rate in force; orders closed by administrative closure are not charged
+				            r = if [_Result] = "AdminClosure" then null else fnRate([_Group], [Created Date]),
+				            km = [_Km],
+				            // Value before VAT: no per-km value, no km or up to the fixed-km limit -> fixed value;
+				            // beyond the max km -> no value; otherwise km x per-km value
+				            value =
+				                if r = null then null
+				                else if r[Value Per Km] = null or km = null or km <= (if r[Max Fixed Km] = null then 0 else r[Max Fixed Km]) then r[Fixed Value]
+				                else if r[Max Km] <> null and km > r[Max Km] then null
+				                else km * r[Value Per Km]
+				        in
+				            [Cost = value, VAT = if value = null then null else value * r[VAT Rate],
+				             AtFiling = if value = null then null else value * r[Filing Payment Rate]]),
+				    // The cost record is opened into columns
+				    Expanded = Table.ExpandRecordColumn(WithCost, "_C", {"Cost", "VAT", "AtFiling"},
+				        {"Permit Cost", "_VAT", "Payment At Filing"}),
+				
+				    // ---------- When it is paid ----------
+				    // rest = what is not paid at filing; isOpen = no closure date; delivered = closed with result Granted
+				    WithPayments = Table.AddColumn(Expanded, "_P", each
+				        let
+				            rest = if [Permit Cost] = null then null else [Permit Cost] - [Payment At Filing],
+				            isOpen = [Closure Date] = null,
+				            delivered = [_Result] = "Granted"
+				        in
+				            // No cost, no payment stages; otherwise: delivered -> the rest is confirmed; open
+				            // -> pending confirmation; closed without delivery -> only what was paid at filing
+				            if rest = null then [Delivery = null, Pending = null, StageES = null, StageEN = null]
+				            else [
+				                Delivery = if delivered then rest else 0,
+				                Pending = if isOpen then rest else 0,
+				                StageES = if delivered then "Entrega confirmada" else if isOpen then "Por confirmar"
+				                    else if [Payment At Filing] > 0 then "Solo pago inicial" else "Sin pago",
+				                StageEN = if delivered then "Delivery confirmed" else if isOpen then "Pending confirmation"
+				                    else if [Payment At Filing] > 0 then "Initial payment only" else "No payment"
+				            ]),
+				    WithStages = Table.ExpandRecordColumn(WithPayments, "_P", {"Delivery", "Pending", "StageES", "StageEN"},
+				        {"Payment Delivery Confirmed", "Payment Pending Confirmation", "Payment Stage ES", "Payment Stage EN"}),
+				    // Cost with VAT, creation year and types
+				    WithTotal = Table.AddColumn(WithStages, "Permit Cost With VAT", each if [Permit Cost] = null then null else [Permit Cost] + [_VAT], type number),
+				    WithYear = Table.AddColumn(WithTotal, "Created Year", each if [Created Date] = null then null else Date.Year([Created Date]), Int64.Type),
+				    Typed = Table.TransformColumnTypes(WithYear, {{"Permit Cost", type number},
+				        {"Payment At Filing", type number}, {"Payment Delivery Confirmed", type number}, {"Payment Pending Confirmation", type number},
+				        {"Payment Stage ES", type text}, {"Payment Stage EN", type text}}),
+				
+				    // ---------- KPI windows ----------
+				    // Start dates of each indicator (settings, a single row)
+				    Starts = Settings{0},
+				    fnFrom = (f as any, start as date) as logical => f <> null and Date.From(f) >= start,
+				    // An order counts in an indicator if it was created on or after its start date
+				    WithWindows = Table.AddColumn(Table.AddColumn(Table.AddColumn(Typed,
+				        "In Backlog KPI", each fnFrom([Created Date], Starts[Backlog Start]), type logical),
+				        "In Handling KPI", each fnFrom([Created Date], Starts[Handling Start]), type logical),
+				        "In Municipal KPI", each fnFrom([Created Date], Starts[Municipal Start]), type logical),
+				    // Drop the helper columns
+				    Final = Table.RemoveColumns(WithWindows, {"_Group", "_Result", "_Km", "_VAT"})
+				in
+				    Final
+
+	annotation PBI_ResultType = Table

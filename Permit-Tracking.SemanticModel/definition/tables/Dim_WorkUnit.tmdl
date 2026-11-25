@@ -1,0 +1,44 @@
+/// Field crews (work units) that handle the orders.
+table Dim_WorkUnit
+	lineageTag: b21b1d69-8167-4e9e-a8ed-36cc0b31d5cd
+
+	column WorkUnitKey
+		dataType: string
+		isHidden
+		lineageTag: d76a1d66-5606-44ed-ab19-dfa1dbedb22a
+		summarizeBy: none
+		sourceColumn: WorkUnitKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Work Unit Name'
+		dataType: string
+		lineageTag: 3c032dd1-1c0b-456e-8392-4f48e0e4ad94
+		summarizeBy: none
+		sourceColumn: Work Unit Name
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Dim_WorkUnit = m
+		mode: import
+		queryGroup: '4. Dimensions'
+		source =
+				let
+				    Source = OrdersPermits,
+				
+				    Columns = Table.SelectColumns(Source, {"Work Unit Code", "Work Unit Name"}),
+				
+				    // No blank unit (registered orders do not have a unit yet)
+				    NonBlank = Table.SelectRows(Columns, each [Work Unit Code] <> null),
+				
+				    Distinct = Table.Distinct(NonBlank, {"Work Unit Code"}),
+				
+				    Renamed = Table.RenameColumns(Distinct, {
+				        {"Work Unit Code", "WorkUnitKey"}
+				    }),
+				
+				    Sorted = Table.Sort(Renamed, {{"WorkUnitKey", Order.Ascending}})
+				in
+				    Sorted
+
+	annotation PBI_ResultType = Table

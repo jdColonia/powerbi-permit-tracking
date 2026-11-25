@@ -1,0 +1,84 @@
+/// Locations with municipality (matched by keywords), department and coordinates of the town centre.
+table Dim_Location
+	lineageTag: 8b95262e-2ddc-4ed6-8f8f-7335747d788a
+
+	column LocationKey
+		dataType: string
+		isHidden
+		lineageTag: b7dc9806-1b64-4530-8dfa-984590dfc2d6
+		summarizeBy: none
+		sourceColumn: LocationKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column Municipality
+		dataType: string
+		dataCategory: City
+		lineageTag: e1d824d3-6af1-4d5c-9aca-85020bf32eb3
+		summarizeBy: none
+		sourceColumn: Municipality
+
+		annotation SummarizationSetBy = Automatic
+
+	column Department
+		dataType: string
+		dataCategory: StateOrProvince
+		lineageTag: fa553560-1241-46f0-bb4d-58f6ac6d8527
+		summarizeBy: none
+		sourceColumn: Department
+
+		annotation SummarizationSetBy = Automatic
+
+	column Latitude
+		dataType: double
+		dataCategory: Latitude
+		lineageTag: 13d3555d-9242-41d4-91e7-e2bd30b6deec
+		summarizeBy: none
+		sourceColumn: Latitude
+
+		annotation SummarizationSetBy = Automatic
+
+	column Longitude
+		dataType: double
+		dataCategory: Longitude
+		lineageTag: 7141ba9a-7939-4a19-ac8c-669a862db5df
+		summarizeBy: none
+		sourceColumn: Longitude
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Dim_Location = m
+		mode: import
+		queryGroup: '4. Dimensions'
+		source =
+				let
+				    Source = OrdersUnique,
+				
+				    Columns = Table.SelectColumns(Source, {"Location Code", "Location Name"}),
+				
+				    // No blank location
+				    NonBlank = Table.SelectRows(Columns, each [Location Code] <> null),
+				
+				    Distinct = Table.Distinct(NonBlank, {"Location Code"}),
+				
+				    Renamed = Table.RenameColumns(Distinct, {
+				        {"Location Code", "LocationKey"}
+				    }),
+				
+				    // Municipality, department and coordinates of the town centre (function fnMunicipality); null if none is recognized
+				    WithMunicipality = Table.AddColumn(Renamed, "_Municipality", each fnMunicipality([Location Name])),
+				    Expanded = Table.ExpandRecordColumn(WithMunicipality, "_Municipality", {"Municipality", "Department", "Latitude", "Longitude"}),
+				
+				    Types = Table.TransformColumnTypes(Expanded, {
+				        {"Municipality", type text}, {"Department", type text},
+				        {"Latitude", type number}, {"Longitude", type number}
+				    }),
+				
+				    Sorted = Table.Sort(Types, {{"Location Name", Order.Ascending}}),
+				
+				    // The name was only needed to find the municipality
+				    Final = Table.RemoveColumns(Sorted, {"Location Name"})
+				in
+				    Final
+
+	annotation PBI_ResultType = Table

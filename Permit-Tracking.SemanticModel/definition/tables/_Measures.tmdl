@@ -1,0 +1,1702 @@
+/// Container table for the measures.
+table _Measures
+	lineageTag: ec35bc83-f27b-4592-9470-d9db8b106ae8
+
+
+	/// Date format string used in text measures: MM/dd/yyyy for English, dd/MM/yyyy for Spanish.
+	measure 'Date Format' =
+			IF ( [Lang] = "en", "MM/dd/yyyy", "dd/MM/yyyy" )
+		isHidden
+		displayFolder: Common
+		lineageTag: 67fa04e8-f28a-51d0-a3cd-fc3c3ff0cf60
+
+	/// Locale used by FORMAT in text measures: en-US for English, es-CO for Spanish.
+	measure Locale =
+			IF ( [Lang] = "en", "en-US", "es-CO" )
+		isHidden
+		displayFolder: Common
+		lineageTag: da7ac5a9-4ded-5a8e-a0c4-a13348c6cbe4
+
+	/// Language of the report: the code selected in the Language table ("es" by default). Every text measure switches on it.
+	measure Lang =
+			SELECTEDVALUE ( 'Language'[Code], "es" )
+		isHidden
+		displayFolder: Common
+		lineageTag: 7dcbedfc-86f5-504e-b41a-9f367e335ac7
+
+	/// Cutoff date of the baseline according to config_settings.csv. Used as a fallback: if Targets has no exact cutoff for an indicator, the baseline is cut at the end of this day.
+	measure 'Baseline Date' =
+			MAX ( Settings[Baseline Date] )
+		formatString: Short Date
+		displayFolder: Orders\Configuration
+		lineageTag: fe544033-e266-40c1-860a-8734f9dbddec
+
+	/// Months back (config_settings.csv) of the window used for the granting time: permits granted in the last N months are counted. Backlog page.
+	measure 'Time Window Months' =
+			MAX ( Settings[Time Window Months] )
+		formatString: 0
+		displayFolder: Orders\Configuration
+		lineageTag: 072c8a87-5d16-4532-874c-279797bef7fb
+
+	/// Age in months (config_settings.csv, AgeAlertMonths) from which an open order is considered old and shown in red.
+	measure 'Age Alert Months' =
+			MAX ( Settings[Age Alert Months] )
+		formatString: 0
+		displayFolder: Orders\Configuration
+		lineageTag: e20f4d08-6686-4b14-826f-7d60f07cf962
+
+	/// Alert months converted to calendar days (12 months = 365 days). Orders open for more days than this are shown in red; it is the threshold of [Aged Backlog], [Aged Open Orders] and [Color Days Open].
+	measure 'Age Alert Days' =
+			ROUND ( [Age Alert Months] * 365 / 12, 0 )
+		formatString: 0
+		displayFolder: Orders\Configuration
+		lineageTag: 6c26679e-efe5-4102-9239-9c0cb8655f20
+
+	/// Date of the data snapshot (data/snapshot.csv through Info_Refresh). Replaces the system clock so ages and states stay stable.
+	measure Today =
+			// The snapshot date replaces the system clock, so every age and state is reproducible.
+			MAX ( Info_Refresh[Snapshot Date] )
+		formatString: Short Date
+		isHidden
+		displayFolder: Orders\Configuration
+		lineageTag: db339aab-c913-45a9-821c-d97d5918059a
+
+	/// Number of open orders (status Registered or Assigned) within the page filters; it removes none of them (work type, municipality, etc.). Base of the cards and charts of the Open orders page.
+	measure 'Open Orders' =
+			CALCULATE ( COUNTROWS ( Fact_Orders ), Dim_OrderStatus[Is Open] = TRUE () )
+		formatString: #,0
+		displayFolder: Orders\Common
+		lineageTag: ae8135a8-5737-4c9e-99e2-228529041931
+
+	/// Number of closed orders (status Closed). With the date filter of the Closed orders page it counts the orders closed in the period, because the active calendar relationship is the closure date.
+	measure 'Closed Orders' =
+			CALCULATE ( COUNTROWS ( Fact_Orders ), Dim_OrderStatus[Is Closed] = TRUE () )
+		formatString: #,0
+		displayFolder: Orders\Common
+		lineageTag: 2b94129d-186a-478b-adf3-79c7c724bd75
+
+	/// Default responsible area of the order work type according to the catalog (config_work_types.csv). Uses LOOKUPVALUE because the Dim_WorkType dimension is not filtered from the orders table. Blank if there is not exactly one work type in context.
+	measure 'Work Type Area' =
+			SWITCH (
+			    [Lang],
+			    "en", LOOKUPVALUE ( Dim_WorkType[Area EN], Dim_WorkType[WorkTypeKey], SELECTEDVALUE ( Fact_Orders[WorkTypeKey] ) ),
+			    LOOKUPVALUE ( Dim_WorkType[Area ES], Dim_WorkType[WorkTypeKey], SELECTEDVALUE ( Fact_Orders[WorkTypeKey] ) )
+			)
+		displayFolder: Orders\Common
+		lineageTag: 5b4ee338-5b58-4912-8ea3-dc1d29e85649
+
+	/// Who holds the order according to its stage: "Unassigned" if it is Registered, the responsible area of its work type if it is Assigned, and the person who closed it if it is Closed. Blank when there is no order in context (avoids phantom rows). Column of the detail tables.
+	measure 'Current Owner' =
+			IF (
+			    ISEMPTY ( Fact_Orders ),
+			    BLANK (),
+			    VAR rowStatus = SELECTEDVALUE ( Fact_Orders[OrderStatusKey] )
+			    RETURN
+			        SWITCH (
+			            TRUE (),
+			            rowStatus == 0, SWITCH ( [Lang], "en", "Unassigned", "Sin asignar" ),
+			            rowStatus == 5, [Work Type Area],
+			            rowStatus == 8, COALESCE ( SELECTEDVALUE ( Fact_Orders[Closed By Name] ), [Work Type Area] ),
+			            BLANK ()
+			        )
+			)
+		displayFolder: Orders\Common
+		lineageTag: fdd9919a-adb0-469f-a26f-3c1b06aa1462
+
+	/// Calendar days the order of the row has been open: from its creation date to the cutoff date. One order per row; blank if the order is not open or the date is missing. Shown in red with [Color Days Open].
+	measure 'Days Open' =
+			VAR orderId = SELECTEDVALUE ( Fact_Orders[Order ID] )
+			VAR isOpen = LOOKUPVALUE ( Dim_OrderStatus[Is Open], Dim_OrderStatus[OrderStatusKey], SELECTEDVALUE ( Fact_Orders[OrderStatusKey] ) )
+			VAR created = SELECTEDVALUE ( Fact_Orders[Created Date] )
+			RETURN
+			    IF ( NOT ISBLANK ( orderId ) && isOpen = TRUE () && NOT ISBLANK ( created ), DATEDIFF ( created, [Cutoff Date], DAY ) )
+		formatString: 0
+		displayFolder: Orders\Common
+		lineageTag: ce028eb8-a7c4-494f-b816-66a93a98d25a
+
+	/// Calendar days between creation and closure of the closed order of the row. One order per row; blank if a date is missing. The period averages are [Avg Days To Close] and [Avg Days Filing].
+	measure 'Days To Close' =
+			VAR orderId = SELECTEDVALUE ( Fact_Orders[Order ID] )
+			VAR created = SELECTEDVALUE ( Fact_Orders[Created Date] )
+			VAR closedOn = SELECTEDVALUE ( Fact_Orders[Closure Date] )
+			RETURN
+			    IF ( NOT ISBLANK ( orderId ) && NOT ISBLANK ( created ) && NOT ISBLANK ( closedOn ), DATEDIFF ( created, closedOn, DAY ) )
+		formatString: 0
+		displayFolder: Orders\Common
+		lineageTag: 0110d81f-9141-4d13-95af-d5e02205634b
+
+	/// Hidden. Colour of [Days Open] (conditional format): red if it exceeds [Age Alert Days], dark otherwise.
+	measure 'Color Days Open' =
+			VAR d = [Days Open]
+			RETURN IF ( NOT ISBLANK ( d ), IF ( d > [Age Alert Days], "#C62828", "#0E1014" ) )
+		isHidden
+		displayFolder: Orders\Common
+		lineageTag: db892773-1632-4eb5-80b3-891beaaae1a6
+
+	/// Hidden. Colour of the order status text: grey if Registered, dark if Assigned, green if Closed. Blank when there is no order in context.
+	measure 'Color Order Status' =
+			IF (
+			    NOT ISEMPTY ( Fact_Orders ),
+			    SWITCH ( SELECTEDVALUE ( Dim_OrderStatus[OrderStatusKey] ), 0, "#5F636A", 5, "#0E1014", 8, "#1A7F4B", "#0E1014" )
+			)
+		isHidden
+		displayFolder: Orders\Common
+		lineageTag: b1cbecc8-c0d5-469d-8c61-d66bb5d233db
+
+	/// Hidden. Colour of the work type group: accent for Filing, blue for Review, grey for Standalone, dark for any other. Blank when there is no order in context.
+	measure 'Color Group' =
+			IF (
+			    NOT ISEMPTY ( Fact_Orders ),
+			    SWITCH ( SELECTEDVALUE ( Dim_WorkType[Group Key] ), "Filing", "#E5402B", "Review", "#2368B5", "Standalone", "#5F636A", "#0E1014" )
+			)
+		isHidden
+		displayFolder: Orders\Common
+		lineageTag: fe58796b-8e6d-4bca-9af3-ea880d52b009
+
+	/// Hidden. Colour of [Current Owner]: grey for unassigned orders, dark otherwise.
+	measure 'Color Owner' =
+			VAR r = [Current Owner]
+			RETURN IF ( NOT ISBLANK ( r ), IF ( SELECTEDVALUE ( Fact_Orders[OrderStatusKey] ) == 0, "#5F636A", "#0E1014" ) )
+		isHidden
+		displayFolder: Orders\Common
+		lineageTag: c52c08e1-31dc-4bc3-b6c8-7d3c5fe99616
+
+	/// Cutoff date of the order extract: the "today" of the order pages. It is the most recent date among creation, assignment and closure in the data, never later than [Today]. It does not change with the page filters.
+	measure 'Cutoff Date' =
+			VAR c = CALCULATE ( MAX ( Fact_Orders[Created Date] ), REMOVEFILTERS () )
+			VAR a = CALCULATE ( MAX ( Fact_Orders[Assignment Date] ), REMOVEFILTERS () )
+			VAR l = CALCULATE ( MAX ( Fact_Orders[Closure Date] ), REMOVEFILTERS () )
+			VAR m = MAX ( MAX ( c, a ), l )
+			RETURN IF ( NOT ISBLANK ( m ), MIN ( m, [Today] ) )
+		formatString: Short Date
+		displayFolder: Orders\Configuration
+		lineageTag: 778399fc-5845-4f3a-be00-9187c40ed6d4
+
+	/// Creation date from which closed orders count in the Handling KPI (config_settings.csv, HandlingStart). Same rule for the current value and for the baseline.
+	measure 'Handling Start' =
+			MAX ( Settings[Handling Start] )
+		formatString: Short Date
+		displayFolder: Orders\Configuration
+		lineageTag: 794497c3-55f7-4d18-bd8e-af7a79eb558d
+
+	/// Creation date from which permit filings count in the Municipal KPI (config_settings.csv, MunicipalStart). Same rule for the current value and for the baseline.
+	measure 'Municipal Start' =
+			MAX ( Settings[Municipal Start] )
+		formatString: Short Date
+		displayFolder: Orders\Configuration
+		lineageTag: 8786a1fd-17b6-47d3-ad46-a2bca773f2e2
+
+	/// Creation date of the oldest order in the data. Prevents the start of a KPI baseline from falling before the first order.
+	measure 'First Creation Date' =
+			CALCULATE ( MIN ( Fact_Orders[Created Date] ), REMOVEFILTERS () )
+		formatString: Short Date
+		displayFolder: Orders\Configuration
+		lineageTag: ea087431-fa04-4db5-ac15-55ccf719db6e
+
+	/// Current backlog: number of open orders of the work types that count in the backlog (Filing, Review and Standalone) created since Backlog Start, at the end of the cutoff day. KPI card and "current" series of the Backlog page.
+	measure 'KPI Backlog' =
+			VAR T = [Cutoff Date] + 1 - TIME ( 0, 0, 1 )
+			VAR H = T
+			VAR cutDay = DATE ( YEAR ( T ), MONTH ( T ), DAY ( T ) )
+			RETURN
+			    COUNTROWS ( CALCULATETABLE (
+			            Fact_Orders,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            REMOVEFILTERS ( Dim_OrderStatus ),
+			            Dim_WorkType[Counts In Backlog] = TRUE (),
+			            Fact_Orders[In Backlog KPI] = TRUE (),
+			            NOT ISBLANK ( Fact_Orders[Created At] ) && Fact_Orders[Created At] <= T,
+			            ISBLANK ( Fact_Orders[Closed At] ) || Fact_Orders[Closed At] > T
+			        ) ) + 0
+		formatString: #,0
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: 4d49d4bb-af3b-4246-b9aa-09548c092fa1
+
+	/// Baseline of Backlog (orders): the Fixed Baseline of Targets if it has one; otherwise the same calculation as the indicator at the baseline cutoff (Baseline Cutoff and Baseline Created Until of Targets; without a cutoff, the end of the day of [Baseline Date]). Basis: orders open at the cutoff date and time of Targets, as in the team report.
+	measure 'Baseline Backlog' =
+			VAR fixedValue = LOOKUPVALUE ( Targets[Fixed Baseline], Targets[Key], "Backlog" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( fixedValue ),
+			        fixedValue,
+			        VAR cutoff = LOOKUPVALUE ( Targets[Baseline Cutoff], Targets[Key], "Backlog" )
+			        VAR toVal = LOOKUPVALUE ( Targets[Baseline Created Until], Targets[Key], "Backlog" )
+			        VAR T = IF ( ISBLANK ( cutoff ), [Baseline Date] + 1 - TIME ( 0, 0, 1 ), cutoff )
+			        VAR H = IF ( ISBLANK ( toVal ), T, toVal + 1 - TIME ( 0, 0, 1 ) )
+			        VAR cutDay = DATE ( YEAR ( T ), MONTH ( T ), DAY ( T ) )
+			        RETURN
+			            COUNTROWS ( CALCULATETABLE (
+			                    Fact_Orders,
+			                    REMOVEFILTERS ( Dim_Calendar ),
+			                    REMOVEFILTERS ( Dim_OrderStatus ),
+			                    Dim_WorkType[Counts In Backlog] = TRUE (),
+			                    Fact_Orders[In Backlog KPI] = TRUE (),
+			                    NOT ISBLANK ( Fact_Orders[Created At] ) && Fact_Orders[Created At] <= T,
+			                    ISBLANK ( Fact_Orders[Closed At] ) || Fact_Orders[Closed At] > T
+			                ) ) + 0
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: 36e6650a-2dfe-4b43-9b3b-ff73e1451cdf
+
+	/// Target of Backlog (orders): baseline x (1 - midpoint of the reduction range in Targets), rounded. Blank if the baseline or the reduction is missing. Lower is better.
+	measure 'Target Backlog' =
+			VAR r = LOOKUPVALUE ( Targets[Target Reduction], Targets[Key], "Backlog" )
+			VAR b = [Baseline Backlog]
+			RETURN IF ( NOT ISBLANK ( b ) && NOT ISBLANK ( r ), ROUND ( b * ( 1 - r ), 0 ) )
+		formatString: #,0
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: 2f8054b4-6871-4c88-a3a1-4398fe0fb156
+
+	/// KPI card text with the date of the Backlog baseline: "BASELINE AS OF date". The baseline is a snapshot of the open orders on the baseline cutoff day, not an average over a period. Bilingual.
+	measure 'Baseline Range Backlog' =
+			VAR cutoff = LOOKUPVALUE ( Targets[Baseline Cutoff], Targets[Key], "Backlog" )
+			VAR untilCreated = LOOKUPVALUE ( Targets[Baseline Created Until], Targets[Key], "Backlog" )
+			// T = baseline moment (no cutoff in Targets: end of the day of [Baseline Date]); H = last creation that counts (no value: same as T).
+			VAR T = IF ( ISBLANK ( cutoff ), [Baseline Date] + 1 - TIME ( 0, 0, 1 ), cutoff )
+			VAR H = IF ( ISBLANK ( untilCreated ), T, untilCreated + 1 - TIME ( 0, 0, 1 ) )
+			// endDate = end of the range: the cutoff day, or the last creation date if it is earlier.
+			VAR endDate = DATE ( YEAR ( MIN ( T, H ) ), MONTH ( MIN ( T, H ) ), DAY ( MIN ( T, H ) ) )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( endDate ),
+			        SWITCH ( [Lang], "en", "BASELINE AS OF ", "LÍNEA BASE AL " ) & FORMAT ( endDate, [Date Format] )
+			    )
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: aa5144f8-620b-4529-ac38-0758f84c970d
+
+	/// Relative variation of the current Backlog against its baseline: (KPI - baseline) / baseline, as a percentage. Negative = improved (lower is better).
+	measure 'Variation Backlog' =
+			DIVIDE ( [KPI Backlog] - [Baseline Backlog], [Baseline Backlog] )
+		formatString: 0.0%
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: 4908d9df-2b93-442d-8198-a0aafa23748d
+
+	/// Hidden. 1 if the current Backlog already reached the target (KPI <= target; lower is better), 0 if not; blank if either is missing. Feeds [Variation Text Backlog].
+	measure 'Target Met Backlog' =
+			VAR a = [KPI Backlog]
+			VAR m = [Target Backlog]
+			RETURN IF ( NOT ISBLANK ( a ) && NOT ISBLANK ( m ), IF ( a <= m, 1, 0 ) )
+		formatString: 0
+		isHidden
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: cb6103f3-f176-49ba-825e-80f7c32dfb89
+
+	/// Card text with the variation of Backlog against the baseline: "Target met · -x.x %" if the target was reached or "-x.x % vs. baseline" if not. Bilingual.
+	measure 'Variation Text Backlog' =
+			// Signed percentage with the typographic minus; if the target is met, "Target met" goes first.
+			VAR v = [Variation Backlog]
+			VAR pct = SUBSTITUTE ( FORMAT ( v, SWITCH ( [Lang], "en", "+0.0%;-0.0%;0.0%", "+0.0 %;-0.0 %;0.0 %" ), [Locale] ), "-", "−" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( v ),
+			        IF (
+			            [Target Met Backlog] = 1,
+			            SWITCH ( [Lang], "en", "Target met · ", "Meta cumplida · " ) & pct,
+			            pct & SWITCH ( [Lang], "en", " vs. baseline", " vs. línea base" )
+			        )
+			    )
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: d7f78046-d4a4-4b25-8c24-db5666fc3807
+
+	/// Progress of Backlog from the baseline towards the target, from 0 % (at the baseline or worse) to 100 % (target met or better). Blank if a value is missing or baseline and target are equal. Bar of the card.
+	measure 'Progress Backlog' =
+			VAR b = [Baseline Backlog]
+			VAR m = [Target Backlog]
+			VAR a = [KPI Backlog]
+			RETURN
+			    IF ( NOT ISBLANK ( a ) && NOT ISBLANK ( b ) && NOT ISBLANK ( m ) && b <> m, MAX ( 0, MIN ( 1, DIVIDE ( b - a, b - m ) ) ) )
+		formatString: 0%
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: 92d1d5e1-a684-4c91-8cb1-9d30f4a8cdd5
+
+	/// Short card text with the expected reduction range for Backlog (Targets), e.g. "(-20 % to -35 %)". It does not carry the timeframe, which does not fit in the card.
+	measure 'Target Range Backlog' =
+			// Reduction range of Targets (Min Reduction and Max Reduction) as percentages.
+			VAR mn = LOOKUPVALUE ( Targets[Min Reduction], Targets[Key], "Backlog" )
+			VAR mx = LOOKUPVALUE ( Targets[Max Reduction], Targets[Key], "Backlog" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( mn ) && NOT ISBLANK ( mx ),
+			        "(−" & FORMAT ( mn * 100, "0" ) & SWITCH ( [Lang], "en", "% to −", " % a −" ) & FORMAT ( mx * 100, "0" ) & SWITCH ( [Lang], "en", "%)", " %)" )
+			    )
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: 2c270996-594d-4e96-bc2b-9c498ba58038
+
+	/// Text of the current value of Backlog formatted for the report language (decimal separator by locale); blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'KPI Text Backlog' =
+			VAR v = [KPI Backlog] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0", [Locale] ) )
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: ea1d8732-cf08-4e74-98bb-5798addafdaa
+
+	/// Text of the baseline of Backlog formatted for the report language; blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'Baseline Text Backlog' =
+			VAR v = [Baseline Backlog] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0", [Locale] ) )
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: b90ca5c2-5e44-4327-81c6-34b54b948162
+
+	/// Text of the target of Backlog formatted for the report language; blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'Target Text Backlog' =
+			VAR v = [Target Backlog] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0", [Locale] ) )
+		displayFolder: 1. Backlog\Backlog KPI
+		lineageTag: e8e5e43d-c70f-45cc-a5f9-b7b7e9f289b3
+
+	/// Current age of the backlog: average calendar days the orders of the backlog have been open, from their creation to the cutoff day. Same orders as [KPI Backlog]. KPI card of the Backlog page.
+	measure 'KPI Age' =
+			VAR T = [Cutoff Date] + 1 - TIME ( 0, 0, 1 )
+			VAR H = T
+			VAR cutDay = DATE ( YEAR ( T ), MONTH ( T ), DAY ( T ) )
+			RETURN
+			    AVERAGEX (
+			        CALCULATETABLE (
+			            Fact_Orders,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            REMOVEFILTERS ( Dim_OrderStatus ),
+			            Dim_WorkType[Counts In Backlog] = TRUE (),
+			            Fact_Orders[In Backlog KPI] = TRUE (),
+			            NOT ISBLANK ( Fact_Orders[Created At] ) && Fact_Orders[Created At] <= T,
+			            ISBLANK ( Fact_Orders[Closed At] ) || Fact_Orders[Closed At] > T
+			        ),
+			        DATEDIFF ( Fact_Orders[Created Date], cutDay, DAY )
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: 14298f24-5838-4098-812b-fb9e7672a2fe
+
+	/// Baseline of Age (calendar days): the Fixed Baseline of Targets if it has one; otherwise the same calculation as the indicator at the baseline cutoff (Baseline Cutoff and Baseline Created Until of Targets; without a cutoff, the end of the day of [Baseline Date]). Basis: average days of the orders open at the cutoff date and time of Targets, as in the team report.
+	measure 'Baseline Age' =
+			VAR fixedValue = LOOKUPVALUE ( Targets[Fixed Baseline], Targets[Key], "Age" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( fixedValue ),
+			        fixedValue,
+			        VAR cutoff = LOOKUPVALUE ( Targets[Baseline Cutoff], Targets[Key], "Age" )
+			        VAR toVal = LOOKUPVALUE ( Targets[Baseline Created Until], Targets[Key], "Age" )
+			        VAR T = IF ( ISBLANK ( cutoff ), [Baseline Date] + 1 - TIME ( 0, 0, 1 ), cutoff )
+			        VAR H = IF ( ISBLANK ( toVal ), T, toVal + 1 - TIME ( 0, 0, 1 ) )
+			        VAR cutDay = DATE ( YEAR ( T ), MONTH ( T ), DAY ( T ) )
+			        RETURN
+			            AVERAGEX (
+			                CALCULATETABLE (
+			                    Fact_Orders,
+			                    REMOVEFILTERS ( Dim_Calendar ),
+			                    REMOVEFILTERS ( Dim_OrderStatus ),
+			                    Dim_WorkType[Counts In Backlog] = TRUE (),
+			                    Fact_Orders[In Backlog KPI] = TRUE (),
+			                    NOT ISBLANK ( Fact_Orders[Created At] ) && Fact_Orders[Created At] <= T,
+			                    ISBLANK ( Fact_Orders[Closed At] ) || Fact_Orders[Closed At] > T
+			                ),
+			                DATEDIFF ( Fact_Orders[Created Date], cutDay, DAY )
+			            )
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: 5e22e6dc-0a66-406f-af1d-405aab53ef6a
+
+	/// Target of Age (calendar days): baseline x (1 - midpoint of the reduction range in Targets), rounded. Blank if the baseline or the reduction is missing. Lower is better.
+	measure 'Target Age' =
+			VAR r = LOOKUPVALUE ( Targets[Target Reduction], Targets[Key], "Age" )
+			VAR b = [Baseline Age]
+			RETURN IF ( NOT ISBLANK ( b ) && NOT ISBLANK ( r ), ROUND ( b * ( 1 - r ), 0 ) )
+		formatString: #,0
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: daa56f8c-5869-456b-ae1a-87d5b1cf1db3
+
+	/// KPI card text with the date of the Age baseline: "BASELINE AS OF date". The baseline is a snapshot of the open orders on the baseline cutoff day, not an average over a period. Bilingual.
+	measure 'Baseline Range Age' =
+			VAR cutoff = LOOKUPVALUE ( Targets[Baseline Cutoff], Targets[Key], "Age" )
+			VAR untilCreated = LOOKUPVALUE ( Targets[Baseline Created Until], Targets[Key], "Age" )
+			// T = baseline moment (no cutoff in Targets: end of the day of [Baseline Date]); H = last creation that counts (no value: same as T).
+			VAR T = IF ( ISBLANK ( cutoff ), [Baseline Date] + 1 - TIME ( 0, 0, 1 ), cutoff )
+			VAR H = IF ( ISBLANK ( untilCreated ), T, untilCreated + 1 - TIME ( 0, 0, 1 ) )
+			// endDate = end of the range: the cutoff day, or the last creation date if it is earlier.
+			VAR endDate = DATE ( YEAR ( MIN ( T, H ) ), MONTH ( MIN ( T, H ) ), DAY ( MIN ( T, H ) ) )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( endDate ),
+			        SWITCH ( [Lang], "en", "BASELINE AS OF ", "LÍNEA BASE AL " ) & FORMAT ( endDate, [Date Format] )
+			    )
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: 87fbd808-865f-4f30-a3ea-d1b2052848e5
+
+	/// Relative variation of the current Age against its baseline: (KPI - baseline) / baseline, as a percentage. Negative = improved (lower is better).
+	measure 'Variation Age' =
+			DIVIDE ( [KPI Age] - [Baseline Age], [Baseline Age] )
+		formatString: 0.0%
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: 0b517d0c-df4e-407a-9255-ec9e9c4150d7
+
+	/// Hidden. 1 if the current Age already reached the target (KPI <= target; lower is better), 0 if not; blank if either is missing. Feeds [Variation Text Age].
+	measure 'Target Met Age' =
+			VAR a = [KPI Age]
+			VAR m = [Target Age]
+			RETURN IF ( NOT ISBLANK ( a ) && NOT ISBLANK ( m ), IF ( a <= m, 1, 0 ) )
+		formatString: 0
+		isHidden
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: 38222b83-a644-470a-8c91-4dd074b57085
+
+	/// Card text with the variation of Age against the baseline: "Target met · -x.x %" if the target was reached or "-x.x % vs. baseline" if not. Bilingual.
+	measure 'Variation Text Age' =
+			// Signed percentage with the typographic minus; if the target is met, "Target met" goes first.
+			VAR v = [Variation Age]
+			VAR pct = SUBSTITUTE ( FORMAT ( v, SWITCH ( [Lang], "en", "+0.0%;-0.0%;0.0%", "+0.0 %;-0.0 %;0.0 %" ), [Locale] ), "-", "−" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( v ),
+			        IF (
+			            [Target Met Age] = 1,
+			            SWITCH ( [Lang], "en", "Target met · ", "Meta cumplida · " ) & pct,
+			            pct & SWITCH ( [Lang], "en", " vs. baseline", " vs. línea base" )
+			        )
+			    )
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: 6e643733-6d7f-46f3-bdb7-b55c49db20de
+
+	/// Progress of Age from the baseline towards the target, from 0 % (at the baseline or worse) to 100 % (target met or better). Blank if a value is missing or baseline and target are equal. Bar of the card.
+	measure 'Progress Age' =
+			VAR b = [Baseline Age]
+			VAR m = [Target Age]
+			VAR a = [KPI Age]
+			RETURN
+			    IF ( NOT ISBLANK ( a ) && NOT ISBLANK ( b ) && NOT ISBLANK ( m ) && b <> m, MAX ( 0, MIN ( 1, DIVIDE ( b - a, b - m ) ) ) )
+		formatString: 0%
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: 152996dc-21b0-47b6-92ff-a22b49bdf03d
+
+	/// Short card text with the expected reduction range for Age (Targets), e.g. "(-20 % to -35 %)". It does not carry the timeframe, which does not fit in the card.
+	measure 'Target Range Age' =
+			// Reduction range of Targets (Min Reduction and Max Reduction) as percentages.
+			VAR mn = LOOKUPVALUE ( Targets[Min Reduction], Targets[Key], "Age" )
+			VAR mx = LOOKUPVALUE ( Targets[Max Reduction], Targets[Key], "Age" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( mn ) && NOT ISBLANK ( mx ),
+			        "(−" & FORMAT ( mn * 100, "0" ) & SWITCH ( [Lang], "en", "% to −", " % a −" ) & FORMAT ( mx * 100, "0" ) & SWITCH ( [Lang], "en", "%)", " %)" )
+			    )
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: 9be66ab3-4d03-4f39-af2f-709c3759e729
+
+	/// Text of the current value of Age formatted for the report language (decimal separator by locale); blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'KPI Text Age' =
+			VAR v = [KPI Age] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0", [Locale] ) )
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: b4ae549f-d0c5-4667-a5ea-79ba16bbf18a
+
+	/// Text of the baseline of Age formatted for the report language; blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'Baseline Text Age' =
+			VAR v = [Baseline Age] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0", [Locale] ) )
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: 7656a8b9-863b-4753-9869-5db7d891ceff
+
+	/// Text of the target of Age formatted for the report language; blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'Target Text Age' =
+			VAR v = [Target Age] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0", [Locale] ) )
+		displayFolder: 1. Backlog\Age KPI
+		lineageTag: e9b8ecbe-9299-4d70-828c-2b798e7bf33b
+
+	/// Baseline of Granting (calendar days): the Fixed Baseline of Targets if it has one; otherwise the same calculation as the indicator at the baseline cutoff (Baseline Cutoff and Baseline Created Until of Targets; without a cutoff, the end of the day of [Baseline Date]). Basis: the same average, with the N-month window that ends on the baseline day.
+	measure 'Baseline Granting' =
+			VAR fixedValue = LOOKUPVALUE ( Targets[Fixed Baseline], Targets[Key], "Granting" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( fixedValue ),
+			        fixedValue,
+			        VAR cutoff = LOOKUPVALUE ( Targets[Baseline Cutoff], Targets[Key], "Granting" )
+			        VAR toVal = LOOKUPVALUE ( Targets[Baseline Created Until], Targets[Key], "Granting" )
+			        VAR T = IF ( ISBLANK ( cutoff ), [Baseline Date] + 1 - TIME ( 0, 0, 1 ), cutoff )
+			        VAR H = IF ( ISBLANK ( toVal ), T, toVal + 1 - TIME ( 0, 0, 1 ) )
+			        VAR cutDay = DATE ( YEAR ( T ), MONTH ( T ), DAY ( T ) )
+			        VAR windowStart = EDATE ( cutDay, - [Time Window Months] )
+			        RETURN
+			            AVERAGEX (
+			                CALCULATETABLE (
+			                    Fact_Permits,
+			                    REMOVEFILTERS ( Dim_Calendar ),
+			                    Fact_Permits[Granted Date] > windowStart,
+			                    Fact_Permits[Granted Date] <= cutDay
+			                ),
+			                Fact_Permits[Granting Days]
+			            )
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog\Granting KPI
+		lineageTag: 2fe2d8fe-5046-41a6-8c37-2d06b4824677
+
+	/// Target of Granting (calendar days): baseline x (1 - midpoint of the reduction range in Targets), rounded. Blank if the baseline or the reduction is missing. Lower is better.
+	measure 'Target Granting' =
+			VAR r = LOOKUPVALUE ( Targets[Target Reduction], Targets[Key], "Granting" )
+			VAR b = [Baseline Granting]
+			RETURN IF ( NOT ISBLANK ( b ) && NOT ISBLANK ( r ), ROUND ( b * ( 1 - r ), 0 ) )
+		formatString: #,0
+		displayFolder: 1. Backlog\Granting KPI
+		lineageTag: c2ffa455-34f8-428f-b5b8-8aace4b82d1c
+
+	/// Current handling time: average calendar days between creation and closure of all the closed orders of the backlog work types created since Handling Start, with every closure reason, administrative closures included, leaving out requests outside the data scope (same rule as the Closed orders page). KPI card of the Backlog page.
+	measure 'KPI Handling' =
+			VAR T = [Cutoff Date] + 1 - TIME ( 0, 0, 1 )
+			VAR H = T
+			VAR cutDay = DATE ( YEAR ( T ), MONTH ( T ), DAY ( T ) )
+			RETURN
+			    AVERAGEX (
+			        CALCULATETABLE (
+			            Fact_Orders,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            REMOVEFILTERS ( Dim_OrderStatus ),
+			            Dim_WorkType[Counts In Backlog] = TRUE (),
+			            Fact_Orders[In Handling KPI] = TRUE (),
+			            Fact_Orders[Outside Data Scope] <> TRUE (),
+			            NOT ISBLANK ( Fact_Orders[Created At] ) && Fact_Orders[Created At] <= H,
+			            NOT ISBLANK ( Fact_Orders[Closed At] ) && Fact_Orders[Closed At] <= T
+			        ),
+			        DATEDIFF ( Fact_Orders[Created Date], Fact_Orders[Closure Date], DAY )
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: 03c192bf-8f58-49d3-b0d9-605a72a94270
+
+	/// Baseline of Handling (calendar days): the Fixed Baseline of Targets if it has one; otherwise the same calculation as the indicator at the baseline cutoff (Baseline Cutoff and Baseline Created Until of Targets; without a cutoff, the end of the day of [Baseline Date]). Basis: closed orders created and closed up to the cutoffs of Targets.
+	measure 'Baseline Handling' =
+			VAR fixedValue = LOOKUPVALUE ( Targets[Fixed Baseline], Targets[Key], "Handling" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( fixedValue ),
+			        fixedValue,
+			        VAR cutoff = LOOKUPVALUE ( Targets[Baseline Cutoff], Targets[Key], "Handling" )
+			        VAR toVal = LOOKUPVALUE ( Targets[Baseline Created Until], Targets[Key], "Handling" )
+			        VAR T = IF ( ISBLANK ( cutoff ), [Baseline Date] + 1 - TIME ( 0, 0, 1 ), cutoff )
+			        VAR H = IF ( ISBLANK ( toVal ), T, toVal + 1 - TIME ( 0, 0, 1 ) )
+			        VAR cutDay = DATE ( YEAR ( T ), MONTH ( T ), DAY ( T ) )
+			        RETURN
+			            AVERAGEX (
+			                CALCULATETABLE (
+			                    Fact_Orders,
+			                    REMOVEFILTERS ( Dim_Calendar ),
+			                    REMOVEFILTERS ( Dim_OrderStatus ),
+			                    Dim_WorkType[Counts In Backlog] = TRUE (),
+			                    Fact_Orders[In Handling KPI] = TRUE (),
+			                    Fact_Orders[Outside Data Scope] <> TRUE (),
+			                    NOT ISBLANK ( Fact_Orders[Created At] ) && Fact_Orders[Created At] <= H,
+			                    NOT ISBLANK ( Fact_Orders[Closed At] ) && Fact_Orders[Closed At] <= T
+			                ),
+			                DATEDIFF ( Fact_Orders[Created Date], Fact_Orders[Closure Date], DAY )
+			            )
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: 1317a871-6f31-4852-be99-88549396b787
+
+	/// Target of Handling (calendar days): baseline x (1 - midpoint of the reduction range in Targets), rounded. Blank if the baseline or the reduction is missing. Lower is better.
+	measure 'Target Handling' =
+			VAR r = LOOKUPVALUE ( Targets[Target Reduction], Targets[Key], "Handling" )
+			VAR b = [Baseline Handling]
+			RETURN IF ( NOT ISBLANK ( b ) && NOT ISBLANK ( r ), ROUND ( b * ( 1 - r ), 0 ) )
+		formatString: #,0
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: 983c0f0b-3f23-4523-9eab-fc62eb3accdc
+
+	/// KPI card text with the dates of the Handling baseline: "BASELINE: start - end". Start: the later of Handling Start and the first creation date in the data; end: the baseline cutoff day. Bilingual.
+	measure 'Baseline Range Handling' =
+			VAR cutoff = LOOKUPVALUE ( Targets[Baseline Cutoff], Targets[Key], "Handling" )
+			VAR untilCreated = LOOKUPVALUE ( Targets[Baseline Created Until], Targets[Key], "Handling" )
+			// T = baseline moment (no cutoff in Targets: end of the day of [Baseline Date]); H = last creation that counts (no value: same as T).
+			VAR T = IF ( ISBLANK ( cutoff ), [Baseline Date] + 1 - TIME ( 0, 0, 1 ), cutoff )
+			VAR H = IF ( ISBLANK ( untilCreated ), T, untilCreated + 1 - TIME ( 0, 0, 1 ) )
+			// endDate = end of the range: the cutoff day, or the last creation date if it is earlier.
+			VAR endDate = DATE ( YEAR ( MIN ( T, H ) ), MONTH ( MIN ( T, H ) ), DAY ( MIN ( T, H ) ) )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( endDate ),
+			        SWITCH ( [Lang], "en", "BASELINE: ", "LÍNEA BASE: " )
+			            & FORMAT ( MAX ( [Handling Start], [First Creation Date] ), [Date Format] ) & " – " & FORMAT ( endDate, [Date Format] )
+			    )
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: 8f6966e8-76d1-4a59-a557-ad1cb0f7bab1
+
+	/// Relative variation of the current Handling against its baseline: (KPI - baseline) / baseline, as a percentage. Negative = improved (lower is better).
+	measure 'Variation Handling' =
+			DIVIDE ( [KPI Handling] - [Baseline Handling], [Baseline Handling] )
+		formatString: 0.0%
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: 09911c08-74fc-41ff-b535-3d2a13c5a44b
+
+	/// Hidden. 1 if the current Handling already reached the target (KPI <= target; lower is better), 0 if not; blank if either is missing. Feeds [Variation Text Handling].
+	measure 'Target Met Handling' =
+			VAR a = [KPI Handling]
+			VAR m = [Target Handling]
+			RETURN IF ( NOT ISBLANK ( a ) && NOT ISBLANK ( m ), IF ( a <= m, 1, 0 ) )
+		formatString: 0
+		isHidden
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: c15a35ea-a8b1-41d3-a7af-8c9775f64d24
+
+	/// Card text with the variation of Handling against the baseline: "Target met · -x.x %" if the target was reached or "-x.x % vs. baseline" if not. Bilingual.
+	measure 'Variation Text Handling' =
+			// Signed percentage with the typographic minus; if the target is met, "Target met" goes first.
+			VAR v = [Variation Handling]
+			VAR pct = SUBSTITUTE ( FORMAT ( v, SWITCH ( [Lang], "en", "+0.0%;-0.0%;0.0%", "+0.0 %;-0.0 %;0.0 %" ), [Locale] ), "-", "−" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( v ),
+			        IF (
+			            [Target Met Handling] = 1,
+			            SWITCH ( [Lang], "en", "Target met · ", "Meta cumplida · " ) & pct,
+			            pct & SWITCH ( [Lang], "en", " vs. baseline", " vs. línea base" )
+			        )
+			    )
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: 8830dc8d-1181-45f9-9dab-5670713aa13e
+
+	/// Progress of Handling from the baseline towards the target, from 0 % (at the baseline or worse) to 100 % (target met or better). Blank if a value is missing or baseline and target are equal. Bar of the card.
+	measure 'Progress Handling' =
+			VAR b = [Baseline Handling]
+			VAR m = [Target Handling]
+			VAR a = [KPI Handling]
+			RETURN
+			    IF ( NOT ISBLANK ( a ) && NOT ISBLANK ( b ) && NOT ISBLANK ( m ) && b <> m, MAX ( 0, MIN ( 1, DIVIDE ( b - a, b - m ) ) ) )
+		formatString: 0%
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: 17838e06-039d-4dc0-bf99-a62fcbb1b5c9
+
+	/// Short card text with the expected reduction range for Handling (Targets), e.g. "(-20 % to -35 %)". It does not carry the timeframe, which does not fit in the card.
+	measure 'Target Range Handling' =
+			// Reduction range of Targets (Min Reduction and Max Reduction) as percentages.
+			VAR mn = LOOKUPVALUE ( Targets[Min Reduction], Targets[Key], "Handling" )
+			VAR mx = LOOKUPVALUE ( Targets[Max Reduction], Targets[Key], "Handling" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( mn ) && NOT ISBLANK ( mx ),
+			        "(−" & FORMAT ( mn * 100, "0" ) & SWITCH ( [Lang], "en", "% to −", " % a −" ) & FORMAT ( mx * 100, "0" ) & SWITCH ( [Lang], "en", "%)", " %)" )
+			    )
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: fb916f1c-10ee-422c-a343-248cec109b24
+
+	/// Text of the current value of Handling formatted for the report language (decimal separator by locale); blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'KPI Text Handling' =
+			VAR v = [KPI Handling] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0", [Locale] ) )
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: 247ef5c4-af9f-489e-b6f2-4066feeb9ad7
+
+	/// Text of the baseline of Handling formatted for the report language; blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'Baseline Text Handling' =
+			VAR v = [Baseline Handling] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0", [Locale] ) )
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: 9e8ad597-70b6-4f8d-8414-03c322b25f56
+
+	/// Text of the target of Handling formatted for the report language; blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'Target Text Handling' =
+			VAR v = [Target Handling] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0", [Locale] ) )
+		displayFolder: 1. Backlog\Handling KPI
+		lineageTag: f729d08f-01a9-4bb9-954f-2cfd024916c9
+
+	/// Current permit filing time: average calendar days between creation and closure of the closed Filing orders created since Municipal Start, with every closure reason. KPI card of the Backlog page.
+	measure 'KPI Municipal' =
+			VAR T = [Cutoff Date] + 1 - TIME ( 0, 0, 1 )
+			VAR H = T
+			VAR cutDay = DATE ( YEAR ( T ), MONTH ( T ), DAY ( T ) )
+			RETURN
+			    AVERAGEX (
+			        CALCULATETABLE (
+			            Fact_Orders,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            REMOVEFILTERS ( Dim_OrderStatus ),
+			            Dim_WorkType[Group Key] = "Filing",
+			            Fact_Orders[In Municipal KPI] = TRUE (),
+			            NOT ISBLANK ( Fact_Orders[Created At] ) && Fact_Orders[Created At] <= H,
+			            NOT ISBLANK ( Fact_Orders[Closed At] ) && Fact_Orders[Closed At] <= T
+			        ),
+			        DATEDIFF ( Fact_Orders[Created Date], Fact_Orders[Closure Date], DAY )
+			    )
+		formatString: #,0.0
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: b6153fce-4c8e-4523-9bad-24c2cb53a498
+
+	/// Baseline of Municipal (calendar days): the Fixed Baseline of Targets if it has one; otherwise the same calculation as the indicator at the baseline cutoff (Baseline Cutoff and Baseline Created Until of Targets; without a cutoff, the end of the day of [Baseline Date]). Basis: closed Filing orders created and closed up to the cutoffs of Targets.
+	measure 'Baseline Municipal' =
+			VAR fixedValue = LOOKUPVALUE ( Targets[Fixed Baseline], Targets[Key], "Municipal" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( fixedValue ),
+			        fixedValue,
+			        VAR cutoff = LOOKUPVALUE ( Targets[Baseline Cutoff], Targets[Key], "Municipal" )
+			        VAR toVal = LOOKUPVALUE ( Targets[Baseline Created Until], Targets[Key], "Municipal" )
+			        VAR T = IF ( ISBLANK ( cutoff ), [Baseline Date] + 1 - TIME ( 0, 0, 1 ), cutoff )
+			        VAR H = IF ( ISBLANK ( toVal ), T, toVal + 1 - TIME ( 0, 0, 1 ) )
+			        VAR cutDay = DATE ( YEAR ( T ), MONTH ( T ), DAY ( T ) )
+			        RETURN
+			            AVERAGEX (
+			                CALCULATETABLE (
+			                    Fact_Orders,
+			                    REMOVEFILTERS ( Dim_Calendar ),
+			                    REMOVEFILTERS ( Dim_OrderStatus ),
+			                    Dim_WorkType[Group Key] = "Filing",
+			                    Fact_Orders[In Municipal KPI] = TRUE (),
+			                    NOT ISBLANK ( Fact_Orders[Created At] ) && Fact_Orders[Created At] <= H,
+			                    NOT ISBLANK ( Fact_Orders[Closed At] ) && Fact_Orders[Closed At] <= T
+			                ),
+			                DATEDIFF ( Fact_Orders[Created Date], Fact_Orders[Closure Date], DAY )
+			            )
+			    )
+		formatString: #,0.0
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: 7c3eab09-0e97-49aa-9658-eb4ff4cc718f
+
+	/// Target of Municipal (calendar days): baseline x (1 - midpoint of the reduction range in Targets), rounded. Blank if the baseline or the reduction is missing. Lower is better.
+	measure 'Target Municipal' =
+			VAR r = LOOKUPVALUE ( Targets[Target Reduction], Targets[Key], "Municipal" )
+			VAR b = [Baseline Municipal]
+			RETURN IF ( NOT ISBLANK ( b ) && NOT ISBLANK ( r ), ROUND ( b * ( 1 - r ), 1 ) )
+		formatString: #,0.0
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: 495fdcee-4b11-4652-9c1a-05d41c54c9b1
+
+	/// KPI card text with the dates of the Municipal baseline: "BASELINE: start - end". Start: the later of Municipal Start and the first creation date in the data; end: the baseline cutoff day. Bilingual.
+	measure 'Baseline Range Municipal' =
+			VAR cutoff = LOOKUPVALUE ( Targets[Baseline Cutoff], Targets[Key], "Municipal" )
+			VAR untilCreated = LOOKUPVALUE ( Targets[Baseline Created Until], Targets[Key], "Municipal" )
+			// T = baseline moment (no cutoff in Targets: end of the day of [Baseline Date]); H = last creation that counts (no value: same as T).
+			VAR T = IF ( ISBLANK ( cutoff ), [Baseline Date] + 1 - TIME ( 0, 0, 1 ), cutoff )
+			VAR H = IF ( ISBLANK ( untilCreated ), T, untilCreated + 1 - TIME ( 0, 0, 1 ) )
+			// endDate = end of the range: the cutoff day, or the last creation date if it is earlier.
+			VAR endDate = DATE ( YEAR ( MIN ( T, H ) ), MONTH ( MIN ( T, H ) ), DAY ( MIN ( T, H ) ) )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( endDate ),
+			        SWITCH ( [Lang], "en", "BASELINE: ", "LÍNEA BASE: " )
+			            & FORMAT ( MAX ( [Municipal Start], [First Creation Date] ), [Date Format] ) & " – " & FORMAT ( endDate, [Date Format] )
+			    )
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: 73b23fba-8e73-457a-8dd1-eacdad69720d
+
+	/// Relative variation of the current Municipal against its baseline: (KPI - baseline) / baseline, as a percentage. Negative = improved (lower is better).
+	measure 'Variation Municipal' =
+			DIVIDE ( [KPI Municipal] - [Baseline Municipal], [Baseline Municipal] )
+		formatString: 0.0%
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: 2a30971e-56b7-4a58-afc0-787eee823468
+
+	/// Hidden. 1 if the current Municipal already reached the target (KPI <= target; lower is better), 0 if not; blank if either is missing. Feeds [Variation Text Municipal].
+	measure 'Target Met Municipal' =
+			VAR a = [KPI Municipal]
+			VAR m = [Target Municipal]
+			RETURN IF ( NOT ISBLANK ( a ) && NOT ISBLANK ( m ), IF ( a <= m, 1, 0 ) )
+		formatString: 0
+		isHidden
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: 1e5ac807-2848-4a7f-a85c-fa8698047108
+
+	/// Card text with the variation of Municipal against the baseline: "Target met · -x.x %" if the target was reached or "-x.x % vs. baseline" if not. Bilingual.
+	measure 'Variation Text Municipal' =
+			// Signed percentage with the typographic minus; if the target is met, "Target met" goes first.
+			VAR v = [Variation Municipal]
+			VAR pct = SUBSTITUTE ( FORMAT ( v, SWITCH ( [Lang], "en", "+0.0%;-0.0%;0.0%", "+0.0 %;-0.0 %;0.0 %" ), [Locale] ), "-", "−" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( v ),
+			        IF (
+			            [Target Met Municipal] = 1,
+			            SWITCH ( [Lang], "en", "Target met · ", "Meta cumplida · " ) & pct,
+			            pct & SWITCH ( [Lang], "en", " vs. baseline", " vs. línea base" )
+			        )
+			    )
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: 852bb82d-59af-4157-95e4-27a254e02177
+
+	/// Progress of Municipal from the baseline towards the target, from 0 % (at the baseline or worse) to 100 % (target met or better). Blank if a value is missing or baseline and target are equal. Bar of the card.
+	measure 'Progress Municipal' =
+			VAR b = [Baseline Municipal]
+			VAR m = [Target Municipal]
+			VAR a = [KPI Municipal]
+			RETURN
+			    IF ( NOT ISBLANK ( a ) && NOT ISBLANK ( b ) && NOT ISBLANK ( m ) && b <> m, MAX ( 0, MIN ( 1, DIVIDE ( b - a, b - m ) ) ) )
+		formatString: 0%
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: 96599bfe-c96a-4c5a-8f44-b4fe27d946c1
+
+	/// Short card text with the expected reduction range for Municipal (Targets), e.g. "(-20 % to -35 %)". It does not carry the timeframe, which does not fit in the card.
+	measure 'Target Range Municipal' =
+			// Reduction range of Targets (Min Reduction and Max Reduction) as percentages.
+			VAR mn = LOOKUPVALUE ( Targets[Min Reduction], Targets[Key], "Municipal" )
+			VAR mx = LOOKUPVALUE ( Targets[Max Reduction], Targets[Key], "Municipal" )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( mn ) && NOT ISBLANK ( mx ),
+			        "(−" & FORMAT ( mn * 100, "0" ) & SWITCH ( [Lang], "en", "% to −", " % a −" ) & FORMAT ( mx * 100, "0" ) & SWITCH ( [Lang], "en", "%)", " %)" )
+			    )
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: 780c3bba-abd3-4c65-a5e5-b885d13a2b17
+
+	/// Text of the current value of Municipal formatted for the report language (decimal separator by locale); blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'KPI Text Municipal' =
+			VAR v = [KPI Municipal] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0.0", [Locale] ) )
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: 16147aab-38c4-451f-b4f4-259112a30a86
+
+	/// Text of the baseline of Municipal formatted for the report language; blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'Baseline Text Municipal' =
+			VAR v = [Baseline Municipal] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0.0", [Locale] ) )
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: 4ee9019f-24a8-44b9-9fbd-b98f3da2548e
+
+	/// Text of the target of Municipal formatted for the report language; blank if there is no value. The cards take it by the key of KpiCards.
+	measure 'Target Text Municipal' =
+			VAR v = [Target Municipal] RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0.0", [Locale] ) )
+		displayFolder: 1. Backlog\Municipal KPI
+		lineageTag: f844c0a8-68bb-48e2-b6fc-3340c6f55045
+
+	/// Open backlog orders in the age band of the row (months since creation) at the cutoff date. Axis: Dim_AgeBand. Blank if no single band is in context.
+	measure 'Backlog By Age' =
+			VAR fromVal = SELECTEDVALUE ( Dim_AgeBand[From Days] )
+			VAR toVal = SELECTEDVALUE ( Dim_AgeBand[To Days] )
+			VAR t = [Cutoff Date]
+			RETURN
+			    IF (
+			        HASONEVALUE ( Dim_AgeBand[Age Band Order] ),
+			        COUNTROWS (
+			            FILTER (
+			                CALCULATETABLE (
+			                    Fact_Orders,
+			                    REMOVEFILTERS ( Dim_Calendar ),
+			                    REMOVEFILTERS ( Dim_OrderStatus ),
+			                    Dim_WorkType[Counts In Backlog] = TRUE (),
+			                    Fact_Orders[In Backlog KPI] = TRUE (),
+			                    NOT ISBLANK ( Fact_Orders[Created Date] ) && Fact_Orders[Created Date] <= t,
+			                    ISBLANK ( Fact_Orders[Closure Date] ) || Fact_Orders[Closure Date] > t
+			                ),
+			                VAR d = DATEDIFF ( Fact_Orders[Created Date], t, DAY )
+			                RETURN d >= fromVal && ( ISBLANK ( toVal ) || d < toVal )
+			            )
+			        )
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: be326469-7d2e-4071-917f-8de48f181027
+
+	/// Backlog orders open for [Age Alert Days] days or more at the cutoff date (same boundary as the 12 to 24 age band).
+	measure 'Aged Backlog' =
+			VAR t = [Cutoff Date]
+			VAR threshold = [Age Alert Days]
+			RETURN
+			    COUNTROWS (
+			        FILTER ( CALCULATETABLE (
+			            Fact_Orders,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            REMOVEFILTERS ( Dim_OrderStatus ),
+			            Dim_WorkType[Counts In Backlog] = TRUE (),
+			            Fact_Orders[In Backlog KPI] = TRUE (),
+			            NOT ISBLANK ( Fact_Orders[Created Date] ) && Fact_Orders[Created Date] <= t,
+			            ISBLANK ( Fact_Orders[Closure Date] ) || Fact_Orders[Closure Date] > t
+			        ), DATEDIFF ( Fact_Orders[Created Date], t, DAY ) >= threshold )
+			    ) + 0
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 479f51fb-2429-41c3-b57e-ed68954781b2
+
+	/// Subtitle of the age chart: how many orders are open and how many of them (and what share) have been open for more than the alert months. Bilingual.
+	measure 'Age Subtitle' =
+			VAR b = [KPI Backlog]
+			VAR v = [Aged Backlog]
+			RETURN
+			    SWITCH (
+			        [Lang],
+			        "en", FORMAT ( b, "#,0", [Locale] ) & " open orders; " & FORMAT ( v, "#,0", [Locale] ) & " (" & FORMAT ( DIVIDE ( v, b ), "0%", [Locale] ) & ") have been open for more than " & [Age Alert Months] & " months",
+			        FORMAT ( b, "#,0", [Locale] ) & " órdenes abiertas; " & FORMAT ( v, "#,0", [Locale] ) & " (" & FORMAT ( DIVIDE ( v, b ), "0 %", [Locale] ) & ") llevan más de " & [Age Alert Months] & " meses"
+			    )
+		displayFolder: 1. Backlog
+		lineageTag: cddf104b-b3af-4c1b-9939-da991573e7e3
+
+	/// Label of the aged zone of the age chart: "Over N months: x". Bilingual.
+	measure 'Aged Zone Label' =
+			SWITCH (
+			    [Lang],
+			    "en", "Over " & [Age Alert Months] & " months: " & FORMAT ( [Aged Backlog], "#,0", [Locale] ),
+			    "Más de " & [Age Alert Months] & " meses: " & FORMAT ( [Aged Backlog], "#,0", [Locale] )
+			)
+		displayFolder: 1. Backlog
+		lineageTag: 607a7ec0-482d-4e0d-815a-503fd6ead09b
+
+	/// Open backlog of the municipality, shown only for the top 10 (ranked by [KPI Backlog] within the selected municipalities).
+	measure 'Backlog Top Municipalities' =
+			VAR v = [KPI Backlog]
+			VAR r = RANKX ( ALLSELECTED ( Dim_Location[Municipality] ), [KPI Backlog], , DESC, SKIP )
+			RETURN IF ( v > 0 && r <= 10, v )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: f3cf6cea-293f-4b5c-9231-81a37dec54b5
+
+	/// Hidden. Fixed colour of the bars of the standalone permits chart.
+	measure 'Color Standalone' =
+			"#5F636A"
+		isHidden
+		displayFolder: 1. Backlog
+		lineageTag: b61d7914-882b-47e1-8d4e-5a5dff85e0c3
+
+	/// Open standalone orders created less than 2 years (730 days) before the cutoff date, by work type (entity). Blank for other groups.
+	measure 'Standalone Up To 2 Years' =
+			VAR t = [Cutoff Date]
+			RETURN
+			    IF (
+			        SELECTEDVALUE ( Dim_WorkType[Group Key] ) = "Standalone",
+			        COUNTROWS ( FILTER ( CALCULATETABLE (
+			            Fact_Orders,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            REMOVEFILTERS ( Dim_OrderStatus ),
+			            Dim_WorkType[Counts In Backlog] = TRUE (),
+			            Fact_Orders[In Backlog KPI] = TRUE (),
+			            NOT ISBLANK ( Fact_Orders[Created Date] ) && Fact_Orders[Created Date] <= t,
+			            ISBLANK ( Fact_Orders[Closure Date] ) || Fact_Orders[Closure Date] > t
+			        ), DATEDIFF ( Fact_Orders[Created Date], t, DAY ) < 730 ) )
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 651b1a3b-b93a-400a-9ffa-cf296d16e970
+
+	/// Open standalone orders created 2 years (730 days) or more before the cutoff date, by work type (entity). Blank for other groups. Shown in red.
+	measure 'Standalone Over 2 Years' =
+			VAR t = [Cutoff Date]
+			RETURN
+			    IF (
+			        SELECTEDVALUE ( Dim_WorkType[Group Key] ) = "Standalone",
+			        COUNTROWS ( FILTER ( CALCULATETABLE (
+			            Fact_Orders,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            REMOVEFILTERS ( Dim_OrderStatus ),
+			            Dim_WorkType[Counts In Backlog] = TRUE (),
+			            Fact_Orders[In Backlog KPI] = TRUE (),
+			            NOT ISBLANK ( Fact_Orders[Created Date] ) && Fact_Orders[Created Date] <= t,
+			            ISBLANK ( Fact_Orders[Closure Date] ) || Fact_Orders[Closure Date] > t
+			        ), DATEDIFF ( Fact_Orders[Created Date], t, DAY ) >= 730 ) )
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 24d60340-1ad6-461f-9130-81a50db93ac6
+
+	/// Average calendar days from creation to closure of the standalone orders closed with result Granted.
+	measure 'Days To Permit Standalone' =
+			AVERAGEX (
+			    CALCULATETABLE (
+			        Fact_Orders,
+			        REMOVEFILTERS ( Dim_Calendar ),
+			        REMOVEFILTERS ( Dim_OrderStatus ),
+			        Dim_WorkType[Group Key] = "Standalone",
+			        Dim_ClosureReason[Result Key] = "Granted"
+			    ),
+			    DATEDIFF ( Fact_Orders[Created Date], Fact_Orders[Closure Date], DAY )
+			)
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: ebd46bae-681d-4f3b-a2ed-6847505ec645
+
+	/// Number of permits granted in the last N months (Time Window Months) up to the cutoff date. Does not use the page date filter.
+	measure 'Permits Granted In Window' =
+			VAR t = [Cutoff Date]
+			VAR windowStart = EDATE ( t, - [Time Window Months] )
+			RETURN
+			    COUNTROWS ( CALCULATETABLE (
+			            Fact_Permits,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            Fact_Permits[Granted Date] > windowStart,
+			            Fact_Permits[Granted Date] <= t
+			        ) ) + 0
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: a7b8c0f6-f550-449c-a948-33e7efbe81eb
+
+	/// 80th percentile of the granting days of the permits granted in the window: 8 out of 10 permits take less than this many days.
+	measure 'P80 Granting' =
+			VAR t = [Cutoff Date]
+			VAR windowStart = EDATE ( t, - [Time Window Months] )
+			RETURN
+			    PERCENTILEX.INC ( CALCULATETABLE (
+			            Fact_Permits,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            Fact_Permits[Granted Date] > windowStart,
+			            Fact_Permits[Granted Date] <= t
+			        ), Fact_Permits[Granting Days], 0.8 )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 63779fc1-c097-46aa-a8d8-7bb7bb188328
+
+	/// Average days of the filing stage (filing created -> documents filed) of the permits granted in the window.
+	measure 'Avg Filing Stage Days' =
+			VAR t = [Cutoff Date]
+			VAR windowStart = EDATE ( t, - [Time Window Months] )
+			RETURN
+			    AVERAGEX ( CALCULATETABLE (
+			            Fact_Permits,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            Fact_Permits[Granted Date] > windowStart,
+			            Fact_Permits[Granted Date] <= t
+			        ), Fact_Permits[Filing Days] )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: adb31eb3-5911-4639-a2b9-1245394129da
+
+	/// Average days of the review stage (review created -> permit delivered) of the permits granted in the window.
+	measure 'Avg Review Stage Days' =
+			VAR t = [Cutoff Date]
+			VAR windowStart = EDATE ( t, - [Time Window Months] )
+			RETURN
+			    AVERAGEX ( CALCULATETABLE (
+			            Fact_Permits,
+			            REMOVEFILTERS ( Dim_Calendar ),
+			            Fact_Permits[Granted Date] > windowStart,
+			            Fact_Permits[Granted Date] <= t
+			        ), Fact_Permits[Review Days] )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 05673fe3-bd2b-40e7-b204-43754810a71e
+
+	/// Hidden. Sum of the average days of both stages; it is the total of the stacked bar of the cycle panel.
+	measure 'Stage Days Total' =
+			[Avg Filing Stage Days] + [Avg Review Stage Days]
+		formatString: #,0
+		isHidden
+		displayFolder: 1. Backlog
+		lineageTag: 89b64671-f468-4353-9df4-5c22a8b35706
+
+	/// Text of the average granting time ("N days"): filing + review stages, the same split the stage bar shows. Bilingual.
+	measure 'Granting Text' =
+			VAR v = [Stage Days Total]
+			RETURN IF ( NOT ISBLANK ( v ), FORMAT ( v, "#,0", [Locale] ) & SWITCH ( [Lang], "en", " days", " días" ) )
+		displayFolder: 1. Backlog
+		lineageTag: 79108d2d-e8df-4ff8-917b-b115aef7bd63
+
+	/// Text of the 80th percentile granting time ("80% approved within N days"). Bilingual.
+	measure 'P80 Granting Text' =
+			VAR v = [P80 Granting]
+			RETURN
+			    IF (
+			        NOT ISBLANK ( v ),
+			        SWITCH ( [Lang], "en", "80% approved within " & FORMAT ( v, "#,0", [Locale] ) & " days", "8 de cada 10 se aprueban en menos de " & FORMAT ( v, "#,0", [Locale] ) & " días" )
+			    )
+		displayFolder: 1. Backlog
+		lineageTag: 7e43cc63-7d07-4570-82ad-7a996a51982c
+
+	/// Subtitle of the cycle panel: permits granted in the last N months. Bilingual.
+	measure 'Cycle Subtitle' =
+			SWITCH (
+			    [Lang],
+			    "en", "Permits granted in the last " & [Time Window Months] & " months: " & FORMAT ( [Permits Granted In Window], "#,0", [Locale] ),
+			    "Permisos aprobados en los últimos " & [Time Window Months] & " meses: " & FORMAT ( [Permits Granted In Window], "#,0", [Locale] )
+			)
+		displayFolder: 1. Backlog
+		lineageTag: 580b722b-b57f-433e-82da-01cbdf6001c5
+
+	/// Hidden. Review orders closed in the last 12 months up to the cutoff date. Base of the outcome chart and of [Grant Rate].
+	measure 'Reviews Closed 12 Months' =
+			VAR t = [Cutoff Date]
+			VAR windowStart = EDATE ( t, -12 )
+			RETURN
+			    CALCULATE (
+			        COUNTROWS ( Fact_Orders ),
+			        REMOVEFILTERS ( Dim_Calendar ),
+			        REMOVEFILTERS ( Dim_OrderStatus ),
+			        Dim_WorkType[Group Key] = "Review",
+			        Fact_Orders[Closure Date] > windowStart,
+			        Fact_Orders[Closure Date] <= t
+			    ) + 0
+		formatString: #,0
+		isHidden
+		displayFolder: 1. Backlog
+		lineageTag: 4d287edb-b109-4aa5-bbb4-d51c20ed3e2f
+
+	/// Reviews closed in the last 12 months by result (Granted, Denied, No response, Administrative closure). Axis: closure result.
+	measure 'Review Outcomes' =
+			IF ( SELECTEDVALUE ( Dim_ClosureReason[Result Key] ) IN { "Granted", "Denied", "NoResponse", "AdminClosure" }, [Reviews Closed 12 Months] )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 1985e44c-05ec-4d22-b5da-ba1c7f8ba56a
+
+	/// Hidden. Colour of each result bar: green granted, red denied, yellow no response, grey otherwise.
+	measure 'Color Result' =
+			SWITCH ( SELECTEDVALUE ( Dim_ClosureReason[Result Key] ), "Granted", "#1A7F4B", "Denied", "#C62828", "NoResponse", "#E3B341", "#B4BCC4" )
+		isHidden
+		displayFolder: 1. Backlog
+		lineageTag: 2b7e994d-fbe4-4355-81b5-695625986c6d
+
+	/// Share of reviews granted among those that ended with a decision or no answer: granted / (granted + denied + no response), last 12 months.
+	measure 'Grant Rate' =
+			VAR o = CALCULATE ( [Reviews Closed 12 Months], Dim_ClosureReason[Result Key] = "Granted" )
+			VAR notGranted = CALCULATE ( [Reviews Closed 12 Months], Dim_ClosureReason[Result Key] IN { "Denied", "NoResponse" } )
+			RETURN DIVIDE ( o, o + notGranted )
+		formatString: 0%
+		displayFolder: 1. Backlog
+		lineageTag: e02e171c-0114-4967-b403-62d25ca876e8
+
+	/// Backlog at the end of the month of the axis (or the cutoff date if it is earlier), from two years before the cutoff year. Blank outside that range.
+	measure 'Backlog At Month End' =
+			VAR cutoff = [Cutoff Date]
+			VAR fromVal = DATE ( YEAR ( cutoff ) - 2, 1, 1 )
+			VAR inRange = NOT ISBLANK ( cutoff ) && MAX ( Dim_Calendar[Date] ) >= fromVal && MIN ( Dim_Calendar[Date] ) <= cutoff
+			VAR t = MIN ( MAX ( Dim_Calendar[Date] ), cutoff )
+			RETURN IF ( inRange, COUNTROWS ( CALCULATETABLE (
+			        Fact_Orders,
+			        REMOVEFILTERS ( Dim_Calendar ),
+			        REMOVEFILTERS ( Dim_OrderStatus ),
+			        Dim_WorkType[Counts In Backlog] = TRUE (),
+			        Fact_Orders[In Backlog KPI] = TRUE (),
+			        NOT ISBLANK ( Fact_Orders[Created Date] ) && Fact_Orders[Created Date] <= t,
+			        ISBLANK ( Fact_Orders[Closure Date] ) || Fact_Orders[Closure Date] > t
+			    ) ) + 0 )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 70afcd7d-d3c8-4bdf-84df-1fa31881a7b8
+
+	/// Baseline of the backlog as a horizontal line, only where [Backlog At Month End] has a value.
+	measure 'Baseline Backlog Line' =
+			IF ( NOT ISBLANK ( [Backlog At Month End] ), [Baseline Backlog] )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 7312f5d6-0786-49d3-ad66-6d9f60f8f018
+
+	/// Target of the backlog as a horizontal line, only where [Backlog At Month End] has a value.
+	measure 'Target Backlog Line' =
+			IF ( NOT ISBLANK ( [Backlog At Month End] ), [Target Backlog] )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 7da9aa99-80ed-4f19-bce3-4c7c5eb5c9a2
+
+	/// Orders created in the quarter of the axis (backlog work types), using the creation date relationship. Blank outside the two-year range.
+	measure 'New Orders By Quarter' =
+			VAR cutoff = [Cutoff Date]
+			VAR fromVal = DATE ( YEAR ( cutoff ) - 2, 1, 1 )
+			VAR inRange = NOT ISBLANK ( cutoff ) && MAX ( Dim_Calendar[Date] ) >= fromVal && MIN ( Dim_Calendar[Date] ) <= cutoff
+			RETURN
+			    IF (
+			        inRange,
+			        CALCULATE (
+			            COUNTROWS ( Fact_Orders ),
+			            USERELATIONSHIP ( Fact_Orders[Created Date], Dim_Calendar[Date] ),
+			            REMOVEFILTERS ( Dim_OrderStatus ),
+			            Dim_WorkType[Counts In Backlog] = TRUE ()
+			        ) + 0
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 950bcb3d-b2f4-48fc-a947-6bf2d528febe
+
+	/// Orders closed in the quarter of the axis (backlog work types) without administrative closures. Blank outside the two-year range.
+	measure 'Closed Orders By Quarter' =
+			VAR cutoff = [Cutoff Date]
+			VAR fromVal = DATE ( YEAR ( cutoff ) - 2, 1, 1 )
+			VAR inRange = NOT ISBLANK ( cutoff ) && MAX ( Dim_Calendar[Date] ) >= fromVal && MIN ( Dim_Calendar[Date] ) <= cutoff
+			RETURN
+			    IF (
+			        inRange,
+			        CALCULATE (
+			            COUNTROWS ( Fact_Orders ),
+			            REMOVEFILTERS ( Dim_OrderStatus ),
+			            Dim_WorkType[Counts In Backlog] = TRUE (),
+			            NOT ISBLANK ( Fact_Orders[Closure Date] ),
+			            Dim_ClosureReason[Result Key] <> "AdminClosure"
+			        ) + 0
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 6cc6521d-6f82-4e9c-95b3-a089c35b5ef7
+
+	/// Orders closed in the quarter by administrative closure (the order was not needed). Blank outside the two-year range.
+	measure 'Admin Closures By Quarter' =
+			VAR cutoff = [Cutoff Date]
+			VAR fromVal = DATE ( YEAR ( cutoff ) - 2, 1, 1 )
+			VAR inRange = NOT ISBLANK ( cutoff ) && MAX ( Dim_Calendar[Date] ) >= fromVal && MIN ( Dim_Calendar[Date] ) <= cutoff
+			RETURN
+			    IF (
+			        inRange,
+			        CALCULATE (
+			            COUNTROWS ( Fact_Orders ),
+			            REMOVEFILTERS ( Dim_OrderStatus ),
+			            Dim_WorkType[Counts In Backlog] = TRUE (),
+			            NOT ISBLANK ( Fact_Orders[Closure Date] ),
+			            Dim_ClosureReason[Result Key] = "AdminClosure"
+			        ) + 0
+			    )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 720b5ca7-f9a9-451e-93f0-a609de155cf2
+
+	/// Average age of the open backlog at the end of the quarter of the axis. Blank outside the two-year range.
+	measure 'Avg Age At Quarter End' =
+			VAR cutoff = [Cutoff Date]
+			VAR fromVal = DATE ( YEAR ( cutoff ) - 2, 1, 1 )
+			VAR inRange = NOT ISBLANK ( cutoff ) && MAX ( Dim_Calendar[Date] ) >= fromVal && MIN ( Dim_Calendar[Date] ) <= cutoff
+			VAR t = MIN ( MAX ( Dim_Calendar[Date] ), cutoff )
+			RETURN IF ( inRange, AVERAGEX ( CALCULATETABLE (
+			        Fact_Orders,
+			        REMOVEFILTERS ( Dim_Calendar ),
+			        REMOVEFILTERS ( Dim_OrderStatus ),
+			        Dim_WorkType[Counts In Backlog] = TRUE (),
+			        Fact_Orders[In Backlog KPI] = TRUE (),
+			        NOT ISBLANK ( Fact_Orders[Created Date] ) && Fact_Orders[Created Date] <= t,
+			        ISBLANK ( Fact_Orders[Closure Date] ) || Fact_Orders[Closure Date] > t
+			    ), DATEDIFF ( Fact_Orders[Created Date], t, DAY ) ) )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 02a90de9-bcaa-494e-8a89-52c9661d5a65
+
+	/// Baseline of the age as a horizontal line, only where [Avg Age At Quarter End] has a value.
+	measure 'Baseline Age Line' =
+			IF ( NOT ISBLANK ( [Avg Age At Quarter End] ), [Baseline Age] )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: a4b5381c-9425-4ed6-a43d-3f81d963f017
+
+	/// Target of the age as a horizontal line, only where [Avg Age At Quarter End] has a value.
+	measure 'Target Age Line' =
+			IF ( NOT ISBLANK ( [Avg Age At Quarter End] ), [Target Age] )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 03418841-4b49-498b-9fa0-8b26d039c5ab
+
+	/// Average granting days of the permits granted in the quarter; only quarters with 20 or more permits.
+	measure 'Avg Granting By Quarter' =
+			VAR cutoff = [Cutoff Date]
+			VAR fromVal = DATE ( YEAR ( cutoff ) - 2, 1, 1 )
+			VAR inRange = NOT ISBLANK ( cutoff ) && MAX ( Dim_Calendar[Date] ) >= fromVal && MIN ( Dim_Calendar[Date] ) <= cutoff
+			VAR n = COUNTROWS ( Fact_Permits )
+			RETURN IF ( inRange && n >= 20, AVERAGE ( Fact_Permits[Granting Days] ) )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 66a073bc-3356-488a-8cf7-4b0a5510f19e
+
+	/// 80th percentile of the granting days of the permits granted in the quarter; only quarters with 20 or more permits.
+	measure 'P80 Granting By Quarter' =
+			VAR cutoff = [Cutoff Date]
+			VAR fromVal = DATE ( YEAR ( cutoff ) - 2, 1, 1 )
+			VAR inRange = NOT ISBLANK ( cutoff ) && MAX ( Dim_Calendar[Date] ) >= fromVal && MIN ( Dim_Calendar[Date] ) <= cutoff
+			VAR n = COUNTROWS ( Fact_Permits )
+			RETURN IF ( inRange && n >= 20, PERCENTILE.INC ( Fact_Permits[Granting Days], 0.8 ) )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 9f9979c8-5d02-49c2-8e2d-cd5529a858fd
+
+	/// Target of the granting time as a horizontal line, only where [Avg Granting By Quarter] has a value.
+	measure 'Target Granting Line' =
+			IF ( NOT ISBLANK ( [Avg Granting By Quarter] ), [Target Granting] )
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 296218be-ad04-466c-a460-53b7152babcf
+
+	/// Subtitle of the quarterly granting chart, with the target if there is one. Bilingual.
+	measure 'Granting Subtitle' =
+			VAR m = [Target Granting]
+			RETURN
+			    SWITCH (
+			        [Lang],
+			        "en", "Days from filing to approval · lower is better"
+			            & IF ( NOT ISBLANK ( m ), " · target " & FORMAT ( m, "#,0", [Locale] ) & " days" )
+			            & " · quarters with ≥ 20 permits",
+			        "Días de la solicitud a la aprobación · menos es mejor"
+			            & IF ( NOT ISBLANK ( m ), " · meta " & FORMAT ( m, "#,0", [Locale] ) & " días" )
+			            & " · trimestres con ≥ 20 permisos"
+			    )
+		displayFolder: 1. Backlog
+		lineageTag: 6a460923-bc58-4564-a83f-54e8d2f0049a
+
+	/// Number of permits granted (rows of Fact_Permits) within the filters. Tooltip of the quarterly granting chart.
+	measure 'Permits Granted' =
+			COUNTROWS ( Fact_Permits ) + 0
+		formatString: #,0
+		displayFolder: 1. Backlog
+		lineageTag: 84cbdca1-4634-42e3-bccb-38ce1842db05
+
+	/// Open orders of the Standalone group.
+	measure 'Open Standalone' =
+			CALCULATE ( [Open Orders], Dim_WorkType[Group Key] = "Standalone" )
+		formatString: #,0
+		displayFolder: 2. Open Orders
+		lineageTag: 48aba18c-ea02-4096-b38b-bce312c07d6d
+
+	/// Open orders of the Filing group (permit filed).
+	measure 'Open Filed' =
+			CALCULATE ( [Open Orders], Dim_WorkType[Group Key] = "Filing" )
+		formatString: #,0
+		displayFolder: 2. Open Orders
+		lineageTag: da4a1f01-433b-4dbe-a9d8-99b95cf81ab9
+
+	/// Open orders of the Review group (in review).
+	measure 'Open In Review' =
+			CALCULATE ( [Open Orders], Dim_WorkType[Group Key] = "Review" )
+		formatString: #,0
+		displayFolder: 2. Open Orders
+		lineageTag: 091dcc5d-995c-44c2-bffe-d25aeb3a5455
+
+	/// Open orders created [Age Alert Days] days or more before the cutoff date (same boundary as the 12 to 24 age band).
+	measure 'Aged Open Orders' =
+			VAR todayDate = [Cutoff Date]
+			VAR threshold = [Age Alert Days]
+			RETURN
+			    COUNTROWS (
+			        FILTER (
+			            CALCULATETABLE ( Fact_Orders, Dim_OrderStatus[Is Open] = TRUE () ),
+			            DATEDIFF ( Fact_Orders[Created Date], todayDate, DAY ) >= threshold
+			        )
+			    )
+		formatString: #,0
+		displayFolder: 2. Open Orders
+		lineageTag: c51f6566-f75b-4ab3-bf3c-8bb18af81eb4
+
+	/// Open orders in the age band of the row (months since creation). Axis: Dim_AgeBand. Blank if no single band is in context.
+	measure 'Open By Age' =
+			VAR fromVal = SELECTEDVALUE ( Dim_AgeBand[From Days] )
+			VAR toVal = SELECTEDVALUE ( Dim_AgeBand[To Days] )
+			VAR todayDate = [Cutoff Date]
+			RETURN
+			    IF (
+			        HASONEVALUE ( Dim_AgeBand[Age Band Order] ),
+			        COUNTROWS (
+			            FILTER (
+			                CALCULATETABLE ( Fact_Orders, Dim_OrderStatus[Is Open] = TRUE () ),
+			                VAR d = DATEDIFF ( Fact_Orders[Created Date], todayDate, DAY )
+			                RETURN d >= fromVal && ( ISBLANK ( toVal ) || d < toVal )
+			            )
+			        )
+			    )
+		formatString: #,0
+		displayFolder: 2. Open Orders
+		lineageTag: 237b5a00-3297-4a98-a08c-0e9ad4a1d236
+
+	/// Title of the open orders detail table: how many open orders there are for the selected work type, or for all work types. Bilingual.
+	measure 'Open Detail Title' =
+			VAR n = FORMAT ( [Open Orders] + 0, "#,0", [Locale] )
+			VAR typeLabel = SWITCH ( [Lang], "en", SELECTEDVALUE ( Dim_WorkType[Work Type Description EN] ), SELECTEDVALUE ( Dim_WorkType[Work Type Description ES] ) )
+			RETURN
+			    IF (
+			        HASONEVALUE ( Dim_WorkType[WorkTypeKey] ),
+			        SWITCH ( [Lang], "en", "Open orders of " & typeLabel & ": " & n, "Órdenes abiertas de " & typeLabel & ": " & n ),
+			        SWITCH ( [Lang], "en", "Open orders of all work types: " & n, "Órdenes abiertas de todos los tipos de trabajo: " & n )
+			    )
+		displayFolder: 2. Open Orders
+		lineageTag: 6c86f70d-b004-43f1-b584-7a3c390768eb
+
+	/// Average calendar days from creation to closure of the closed backlog orders, leaving out requests outside the data scope (their filing is not in the data).
+	measure 'Avg Days To Close' =
+			AVERAGEX (
+			    FILTER (
+			        CALCULATETABLE ( Fact_Orders, Dim_OrderStatus[Is Closed] = TRUE (), Fact_Orders[Outside Data Scope] <> TRUE (), Dim_WorkType[Counts In Backlog] = TRUE () ),
+			        NOT ISBLANK ( Fact_Orders[Created Date] ) && NOT ISBLANK ( Fact_Orders[Closure Date] )
+			    ),
+			    DATEDIFF ( Fact_Orders[Created Date], Fact_Orders[Closure Date], DAY )
+			)
+		formatString: #,0
+		displayFolder: 3. Closed Orders
+		lineageTag: 4a6d57d4-9afd-4d52-8ba2-f50adb29f197
+
+	/// Average calendar days from creation to closure of the closed Filing orders, leaving out requests outside the data scope.
+	measure 'Avg Days Filing' =
+			AVERAGEX (
+			    FILTER (
+			        CALCULATETABLE ( Fact_Orders, Dim_OrderStatus[Is Closed] = TRUE (), Fact_Orders[Outside Data Scope] <> TRUE (), Dim_WorkType[Group Key] = "Filing" ),
+			        NOT ISBLANK ( Fact_Orders[Created Date] ) && NOT ISBLANK ( Fact_Orders[Closure Date] )
+			    ),
+			    DATEDIFF ( Fact_Orders[Created Date], Fact_Orders[Closure Date], DAY )
+			)
+		formatString: #,0
+		displayFolder: 3. Closed Orders
+		lineageTag: b5ff3af7-6243-46b9-95aa-34f6304c6e16
+
+	/// Orders created in the period (uses the creation date relationship instead of the closure date).
+	measure 'Orders Created In Period' =
+			CALCULATE ( COUNTROWS ( Fact_Orders ), USERELATIONSHIP ( Fact_Orders[Created Date], Dim_Calendar[Date] ) )
+		formatString: #,0
+		displayFolder: 3. Closed Orders
+		lineageTag: e2628a84-b383-4bf4-8f3d-4cc3d57e8e56
+
+	/// Closed orders divided by orders created in the period. Above 1 the backlog goes down.
+	measure 'Closed Per Created Order' =
+			DIVIDE ( [Closed Orders], [Orders Created In Period] )
+		formatString: 0.00
+		displayFolder: 3. Closed Orders
+		lineageTag: caad32b3-f719-4830-aa90-a1e8fc76e834
+
+	/// Hidden. Accent colour of the closure ratio card: green when at least 1 order is closed per order created (the backlog shrinks), amber below 1.
+	measure 'Color Closure Ratio' =
+			VAR r = [Closed Per Created Order]
+			RETURN IF ( NOT ISBLANK ( r ), IF ( r >= 1, "#1A7F4B", "#B07F0C" ) )
+		isHidden
+		displayFolder: 3. Closed Orders
+		lineageTag: 5d0c5ac1-6f0e-4f55-9d35-1a6d3d5b0a11
+
+	/// Orders closed in the month of the axis. Without a date filter it shows only the last 6 months; with a year or month filter it shows the filtered period.
+	measure 'Closed Orders By Month' =
+			VAR endDate = MAX ( Dim_Calendar[Date] )
+			VAR todayDate = [Cutoff Date]
+			RETURN
+			    IF (
+			        ISFILTERED ( Dim_Calendar[Date] ) || ISFILTERED ( Dim_Calendar[Year] ) || ISFILTERED ( Dim_Calendar[Month Name ES] ) || ISFILTERED ( Dim_Calendar[Month Name EN] )
+			            || ( endDate > EOMONTH ( todayDate, -6 ) && endDate <= EOMONTH ( todayDate, 0 ) ),
+			        [Closed Orders]
+			    )
+		formatString: #,0
+		displayFolder: 3. Closed Orders
+		lineageTag: 788a0770-05b0-4664-b0c2-6388105c5614
+
+	/// Average days to close of the orders closed in the month of the axis. Same period rule as [Closed Orders By Month].
+	measure 'Avg Days To Close By Month' =
+			VAR endDate = MAX ( Dim_Calendar[Date] )
+			VAR todayDate = [Cutoff Date]
+			RETURN
+			    IF (
+			        ISFILTERED ( Dim_Calendar[Date] ) || ISFILTERED ( Dim_Calendar[Year] ) || ISFILTERED ( Dim_Calendar[Month Name ES] ) || ISFILTERED ( Dim_Calendar[Month Name EN] )
+			            || ( endDate > EOMONTH ( todayDate, -6 ) && endDate <= EOMONTH ( todayDate, 0 ) ),
+			        [Avg Days To Close]
+			    )
+		formatString: #,0
+		displayFolder: 3. Closed Orders
+		lineageTag: ce56f671-385b-4cf3-9dc4-62a9bc754851
+
+	/// Value of the managed permits before VAT, by creation date of the order.
+	measure 'Permit Value' =
+			CALCULATE ( SUM ( Fact_Orders[Permit Cost] ), USERELATIONSHIP ( Fact_Orders[Created Date], Dim_Calendar[Date] ) )
+		formatString: \C\O\P #,0
+		displayFolder: 4. Costs
+		lineageTag: cfc9b1a7-ff31-4ceb-898f-40f4df1563b9
+
+	/// Part of the permit value paid when the permit is filed (rate share of Rates), before VAT.
+	measure 'Paid At Filing' =
+			CALCULATE ( SUM ( Fact_Orders[Payment At Filing] ), USERELATIONSHIP ( Fact_Orders[Created Date], Dim_Calendar[Date] ) )
+		formatString: \C\O\P #,0
+		displayFolder: 4. Costs
+		lineageTag: d412b981-d29d-41d8-bfba-a996599dfb10
+
+	/// Rest of the value of closed orders whose permit was delivered (result Granted), before VAT.
+	measure 'Delivery Confirmed' =
+			CALCULATE ( SUM ( Fact_Orders[Payment Delivery Confirmed] ), USERELATIONSHIP ( Fact_Orders[Created Date], Dim_Calendar[Date] ) )
+		formatString: \C\O\P #,0
+		displayFolder: 4. Costs
+		lineageTag: fe5fe37d-7d6c-48a2-85fe-bae43290930c
+
+	/// Rest of the value of open orders: the permit may already be delivered, but the data does not say it.
+	measure 'Pending Confirmation' =
+			CALCULATE ( SUM ( Fact_Orders[Payment Pending Confirmation] ), USERELATIONSHIP ( Fact_Orders[Created Date], Dim_Calendar[Date] ) )
+		formatString: \C\O\P #,0
+		displayFolder: 4. Costs
+		lineageTag: b5fbcebc-263b-4234-9f05-1f433f5d3f57
+
+	/// Hidden. [Paid At Filing] in millions of COP for the cost chart; the format shows "COP 12.3M" in English and "COP 12,3 M" in Spanish (the unit is part of the dynamic format).
+	measure 'Paid At Filing Chart' =
+			DIVIDE ( [Paid At Filing], 1000000 )
+		isHidden
+		displayFolder: 4. Costs
+		lineageTag: 539283ff-b0b9-4f54-942d-71157713d599
+		formatStringDefinition = SWITCH ( [Lang], "en", "\C\O\P #,0.0\M", "\C\O\P #,0.0\ \M" )
+
+	/// Hidden. [Delivery Confirmed] in millions of COP for the cost chart; the format shows "COP 12.3M" in English and "COP 12,3 M" in Spanish (the unit is part of the dynamic format).
+	measure 'Delivery Confirmed Chart' =
+			DIVIDE ( [Delivery Confirmed], 1000000 )
+		isHidden
+		displayFolder: 4. Costs
+		lineageTag: 0a41cea8-0193-4e80-a231-b77a43b62e40
+		formatStringDefinition = SWITCH ( [Lang], "en", "\C\O\P #,0.0\M", "\C\O\P #,0.0\ \M" )
+
+	/// Hidden. [Pending Confirmation] in millions of COP for the cost chart; the format shows "COP 12.3M" in English and "COP 12,3 M" in Spanish (the unit is part of the dynamic format).
+	measure 'Pending Confirmation Chart' =
+			DIVIDE ( [Pending Confirmation], 1000000 )
+		isHidden
+		displayFolder: 4. Costs
+		lineageTag: 2ad99bdb-8332-4401-9b70-1d8becb5b915
+		formatStringDefinition = SWITCH ( [Lang], "en", "\C\O\P #,0.0\M", "\C\O\P #,0.0\ \M" )
+
+	/// Orders that have a cost (a rate applies), by creation date.
+	measure 'Permits Managed' =
+			CALCULATE ( COUNTROWS ( FILTER ( Fact_Orders, NOT ISBLANK ( Fact_Orders[Permit Cost] ) ) ), USERELATIONSHIP ( Fact_Orders[Created Date], Dim_Calendar[Date] ) )
+		formatString: #,0
+		displayFolder: 4. Costs
+		lineageTag: 3dcc052f-fca6-44ed-9471-f4c6475e0d4e
+
+	/// Text of [Paid At Filing] in millions of pesos ("COP 12.3M").
+	measure 'Paid At Filing Millions' =
+			VAR v = [Paid At Filing]
+			RETURN
+			    IF (
+			        NOT ISBLANK ( v ),
+			        "COP " & FORMAT ( v / 1000000, "#,0.0", [Locale] ) & SWITCH ( [Lang], "en", "M", " M" ),
+			        "COP " & FORMAT ( 0, "#,0.0", [Locale] ) & SWITCH ( [Lang], "en", "M", " M" )
+			    )
+		displayFolder: 4. Costs
+		lineageTag: da30b5b8-9a5e-4833-9d7c-7f998800dafb
+
+	/// Text of [Delivery Confirmed] in millions of Colombian pesos (COP).
+	measure 'Delivery Confirmed Millions' =
+			VAR v = [Delivery Confirmed]
+			RETURN
+			    IF (
+			        NOT ISBLANK ( v ),
+			        "COP " & FORMAT ( v / 1000000, "#,0.0", [Locale] ) & SWITCH ( [Lang], "en", "M", " M" ),
+			        "COP " & FORMAT ( 0, "#,0.0", [Locale] ) & SWITCH ( [Lang], "en", "M", " M" )
+			    )
+		displayFolder: 4. Costs
+		lineageTag: fd3fb591-4063-459d-b04e-d70813539c2e
+
+	/// Text of [Pending Confirmation] in millions of Colombian pesos (COP).
+	measure 'Pending Confirmation Millions' =
+			VAR v = [Pending Confirmation]
+			RETURN
+			    IF (
+			        NOT ISBLANK ( v ),
+			        "COP " & FORMAT ( v / 1000000, "#,0.0", [Locale] ) & SWITCH ( [Lang], "en", "M", " M" ),
+			        "COP " & FORMAT ( 0, "#,0.0", [Locale] ) & SWITCH ( [Lang], "en", "M", " M" )
+			    )
+		displayFolder: 4. Costs
+		lineageTag: 1d2e839e-c4ff-4b3e-9a40-4ac66653bf0b
+
+	/// Hidden. 1 if the order of the row has a cost, 0 if not. Used to hide rows without cost in the cost detail table.
+	measure 'Has Cost Flag' =
+			IF ( NOT ISBLANK ( SUM ( Fact_Orders[Permit Cost] ) ), 1, 0 )
+		formatString: 0
+		isHidden
+		displayFolder: 4. Costs
+		lineageTag: 2015dc97-8d03-4d74-bb14-7c06338ddc71
+
+	/// Title of the cost detail table with the number of managed permits. Bilingual.
+	measure 'Cost Detail Title' =
+			VAR n = [Permits Managed]
+			RETURN
+			    SWITCH (
+			        [Lang],
+			        "en", "Managed permit details (" & FORMAT ( n, "#,0", [Locale] ) & ")",
+			        "Detalle de los permisos gestionados (" & FORMAT ( n, "#,0", [Locale] ) & ")"
+			    )
+		displayFolder: 4. Costs
+		lineageTag: c7215337-94a0-4f0b-a340-364602333af2
+
+	/// Value text of the KPI card selected by the key of KpiCards.
+	measure 'Card Value Text' =
+			VAR k = SELECTEDVALUE ( KpiCards[Key] )
+			RETURN
+			    SWITCH (
+			        k,
+			        "Backlog", [KPI Text Backlog],
+			        "Age", [KPI Text Age],
+			        "Handling", [KPI Text Handling],
+			        "Municipal", [KPI Text Municipal]
+			    )
+		displayFolder: 1. Backlog\KPI Cards
+		lineageTag: e2e92d26-bbb0-4df0-af45-63c63b4ad6d2
+
+	/// Baseline text of the KPI card selected by the key of KpiCards.
+	measure 'Card Baseline Text' =
+			VAR k = SELECTEDVALUE ( KpiCards[Key] )
+			RETURN
+			    SWITCH (
+			        k,
+			        "Backlog", [Baseline Text Backlog],
+			        "Age", [Baseline Text Age],
+			        "Handling", [Baseline Text Handling],
+			        "Municipal", [Baseline Text Municipal]
+			    )
+		displayFolder: 1. Backlog\KPI Cards
+		lineageTag: 8977f30d-3f17-4855-afd6-fbc958a63156
+
+	/// Text of the baseline dates of the KPI card selected by the key of KpiCards.
+	measure 'Card Baseline Range Text' =
+			VAR k = SELECTEDVALUE ( KpiCards[Key] )
+			RETURN
+			    SWITCH (
+			        k,
+			        "Backlog", [Baseline Range Backlog],
+			        "Age", [Baseline Range Age],
+			        "Handling", [Baseline Range Handling],
+			        "Municipal", [Baseline Range Municipal]
+			    )
+		displayFolder: 1. Backlog\KPI Cards
+		lineageTag: 2deae9c5-c70a-439b-9426-af9702ad366c
+
+	/// Target text of the KPI card selected by the key of KpiCards.
+	measure 'Card Target Text' =
+			VAR k = SELECTEDVALUE ( KpiCards[Key] )
+			RETURN
+			    SWITCH (
+			        k,
+			        "Backlog", [Target Text Backlog],
+			        "Age", [Target Text Age],
+			        "Handling", [Target Text Handling],
+			        "Municipal", [Target Text Municipal]
+			    )
+		displayFolder: 1. Backlog\KPI Cards
+		lineageTag: 8a540271-8422-4ff9-8ec8-fbb64752a34c
+
+	/// Variation text (pill) of the KPI card selected by the key of KpiCards.
+	measure 'Card Variation Text' =
+			VAR k = SELECTEDVALUE ( KpiCards[Key] )
+			RETURN
+			    SWITCH (
+			        k,
+			        "Backlog", [Variation Text Backlog],
+			        "Age", [Variation Text Age],
+			        "Handling", [Variation Text Handling],
+			        "Municipal", [Variation Text Municipal]
+			    )
+		displayFolder: 1. Backlog\KPI Cards
+		lineageTag: fd0037fa-384f-494f-a13b-de852f946827
+
+	/// Expected reduction range text of the KPI card selected by the key of KpiCards.
+	measure 'Card Target Range' =
+			VAR k = SELECTEDVALUE ( KpiCards[Key] )
+			RETURN
+			    SWITCH (
+			        k,
+			        "Backlog", [Target Range Backlog],
+			        "Age", [Target Range Age],
+			        "Handling", [Target Range Handling],
+			        "Municipal", [Target Range Municipal]
+			    )
+		displayFolder: 1. Backlog\KPI Cards
+		lineageTag: 6a3ccacb-ae0d-48ab-a166-55a0d2981d9a
+
+	/// Numeric variation of the KPI card selected by the key of KpiCards. Colours the pill.
+	measure 'Card Variation' =
+			VAR k = SELECTEDVALUE ( KpiCards[Key] )
+			RETURN
+			    SWITCH (
+			        k,
+			        "Backlog", [Variation Backlog],
+			        "Age", [Variation Age],
+			        "Handling", [Variation Handling],
+			        "Municipal", [Variation Municipal]
+			    )
+		formatString: 0.0%
+		displayFolder: 1. Backlog\KPI Cards
+		lineageTag: 464d2cd5-5501-4b6f-8c9e-b53e28b82f0a
+
+	/// Progress from baseline to target of the KPI card selected by the key of KpiCards. Length of the progress bar.
+	measure 'Card Progress' =
+			VAR k = SELECTEDVALUE ( KpiCards[Key] )
+			RETURN
+			    SWITCH (
+			        k,
+			        "Backlog", [Progress Backlog],
+			        "Age", [Progress Age],
+			        "Handling", [Progress Handling],
+			        "Municipal", [Progress Municipal]
+			    )
+		formatString: 0%
+		displayFolder: 1. Backlog\KPI Cards
+		lineageTag: eecd1bb8-9ef8-442d-8fa0-e8b89fe9232b
+
+	/// Hidden flag: 1 if the KPI card already reached its target. Colours the bar and the pill green.
+	measure 'Card Target Met' =
+			VAR k = SELECTEDVALUE ( KpiCards[Key] )
+			RETURN
+			    SWITCH (
+			        k,
+			        "Backlog", [Target Met Backlog],
+			        "Age", [Target Met Age],
+			        "Handling", [Target Met Handling],
+			        "Municipal", [Target Met Municipal]
+			    )
+		formatString: 0
+		displayFolder: 1. Backlog\KPI Cards
+		lineageTag: 9df0939b-7a8e-44b5-bcb3-38073b9e7163
+
+	column Placeholder
+		isHidden
+		lineageTag: 4b39d0b3-83cf-4b8b-ae73-8566a06b7678
+		isNameInferred
+		sourceColumn: [Placeholder]
+
+	partition _Measures = calculated
+		mode: import
+		source = ROW ( "Placeholder", BLANK () )
+

@@ -1,0 +1,125 @@
+/// Fact: one row = one granted permit (cycle of a request: filing created -> filing closed -> review born -> permit delivered). Does not include requests outside the data scope (their filing is not in the data).
+table Fact_Permits
+	lineageTag: 0a54adec-bcd0-45f7-93e7-811c2c57f922
+
+	column LocationKey
+		dataType: string
+		isHidden
+		lineageTag: 5943cf2c-5090-40c0-89d3-8671b6b3f0ea
+		summarizeBy: none
+		sourceColumn: LocationKey
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Closure of the review with result Granted.
+	column 'Granted Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: ac582046-20fb-4de6-ac05-d424f1521245
+		summarizeBy: none
+		sourceColumn: Granted Date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Calendar days: filing created -> documents filed.
+	column 'Filing Days'
+		dataType: int64
+		lineageTag: 3638969f-722a-47d9-ba32-6e1b8b061b33
+		summarizeBy: none
+		sourceColumn: Filing Days
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Calendar days: review born -> permit delivered.
+	column 'Review Days'
+		dataType: int64
+		lineageTag: ed1717e4-2d51-4afa-b2fa-3a0bf276a6f2
+		summarizeBy: none
+		sourceColumn: Review Days
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Calendar days: filing created -> permit delivered.
+	column 'Granting Days'
+		dataType: int64
+		lineageTag: 82b26ded-ab98-43e0-b833-549044f8cfde
+		summarizeBy: none
+		sourceColumn: Granting Days
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Fact_Permits = m
+		mode: import
+		queryGroup: '5. Facts'
+		source =
+				let
+				    // Group of each work type (Filing, Review or Standalone)
+				    Groups = Table.SelectColumns(Dim_WorkType, {"WorkTypeKey", "Group Key"}),
+				    // Result of the closure reason (Granted, Denied...): by code and, if it does not match, by text
+				    fnResult = fnClosureResult(ClosureReasonConfig),
+				    // Only the columns the cycle needs
+				    Base = Table.SelectColumns(OrdersPermits, {"Request ID", "Order Type", "Closure Reason Code", "Closure Reason", "Location Code", "Order Created At", "Order Closed At"}),
+				    // Requests outside the data scope (their first order is a review) are excluded (list from RequestsOutsideData, already in memory)
+				    OutsideRequests = RequestsOutsideData,
+				    // Only orders with a request and a creation date, of requests inside the data scope
+				    WithRequest = Table.SelectRows(Base, each [Request ID] <> null and [Order Created At] <> null
+				        and not List.Contains(OutsideRequests, [Request ID])),
+				    // The group of the work type is added (only Filing and Review are used here)
+				    WithGroup = Table.ExpandTableColumn(
+				        Table.NestedJoin(WithRequest, {"Order Type"}, Groups, {"WorkTypeKey"}, "G", JoinKind.Inner), "G", {"Group Key"}),
+				    // Result of the closure reason of each order
+				    WithResult = Table.AddColumn(WithGroup, "Result", each fnResult([Closure Reason Code], [Closure Reason]), type nullable text),
+				    // Prepared orders, in memory
+				    Orders = Table.Buffer(WithResult),
+				
+				    // ---------- Last granted review of each request ----------
+				    // Closed reviews with result Granted; for each request, the one with the most recent closure date
+				    Granted = Table.SelectRows(Orders, each [Group Key] = "Review" and [Result] = "Granted" and [Order Closed At] <> null),
+				    LastGranted = Table.Group(Granted, {"Request ID"}, {{"T", each Table.Max(_, "Order Closed At"), type record}}),
+				
+				    // ---------- Filings of each request ----------
+				    Filings = Table.SelectRows(Orders, each [Group Key] = "Filing"),
+				    FilingsByRequest = Table.Group(Filings, {"Request ID"}, {{"Rad", each _, type table}}),
+				
+				    // ---------- Permit cycle ----------
+				    // Each request with a granted review, joined to its filings (a request without filings does not enter)
+				    Joined = Table.NestedJoin(LastGranted, {"Request ID"}, FilingsByRequest, {"Request ID"}, "R", JoinKind.Inner),
+				    // Per request: the review that granted it (T) and its filings (R)
+				    Cycles = Table.AddColumn(Joined, "C", each
+				        let
+				            t = [T],
+				            // Filings created up to the creation of the review that granted
+				            filings = Table.SelectRows([R]{0}[Rad], (r) => r[Order Created At] <= t[Order Created At])
+				        in
+				            // Without filings before the review there is no complete cycle: the request is not counted
+				            if Table.IsEmpty(filings) then null
+				            else [
+				                // Location of the review; dates: first creation, last closure of the
+				                // filings, creation and closure of the review
+				                LocationKey = t[Location Code],
+				                #"Created Date" = List.Min(filings[Order Created At]),
+				                #"Filing Date" = List.Max(List.RemoveNulls(filings[Order Closed At])),
+				                #"Review Created Date" = t[Order Created At],
+				                #"Granted Date" = t[Order Closed At]
+				            ]),
+				    // Only requests with a cycle
+				    Valid = Table.SelectRows(Table.SelectColumns(Cycles, {"C"}), each [C] <> null),
+				    Expanded = Table.ExpandRecordColumn(Valid, "C",
+				        {"LocationKey", "Created Date", "Filing Date", "Review Created Date", "Granted Date"}),
+				
+				    // ---------- Days of each stage (calendar) ----------
+				    // Days between two dates (empty if one is missing)
+				    fnDays = (a as nullable date, b as nullable date) as nullable number => if a = null or b = null then null else Duration.Days(b - a),
+				    WithDays = Table.AddColumn(Table.AddColumn(Table.AddColumn(Expanded,
+				        "Filing Days", each fnDays([Created Date], [Filing Date]), Int64.Type),
+				        "Review Days", each fnDays([Review Created Date], [Granted Date]), Int64.Type),
+				        "Granting Days", each fnDays([Created Date], [Granted Date]), Int64.Type),
+				    // The dates of the cycle were only needed to compute the days; the table keeps the permit date, its location and the days
+				    Selected = Table.SelectColumns(WithDays, {"LocationKey", "Granted Date", "Filing Days", "Review Days", "Granting Days"}),
+				    Typed = Table.TransformColumnTypes(Selected, {{"LocationKey", type text}, {"Granted Date", type date}})
+				in
+				    Typed
+
+	annotation PBI_ResultType = Table

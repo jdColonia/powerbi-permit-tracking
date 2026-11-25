@@ -1,0 +1,101 @@
+/// Settings of the order pages (config_settings.csv).
+table Settings
+	isHidden
+	lineageTag: fa6d19d4-1bbc-4a93-89ce-175eda4f520c
+
+	column 'Baseline Date'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 34354561-2b8b-4a5f-acf8-82860941fc3f
+		summarizeBy: none
+		sourceColumn: Baseline Date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Time Window Months'
+		dataType: int64
+		lineageTag: 65a33781-20a8-4685-8bb6-0df1174cf3da
+		summarizeBy: none
+		sourceColumn: Time Window Months
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Age Alert Months'
+		dataType: int64
+		lineageTag: c3bf26bb-a589-4b2a-bdcf-b700b45954d7
+		summarizeBy: none
+		sourceColumn: Age Alert Months
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Backlog Start'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 10ecae27-87cf-44cb-9196-7ba2f938bd36
+		summarizeBy: none
+		sourceColumn: Backlog Start
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Handling Start'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 760830bb-3c62-4246-9370-1da60637a7a6
+		summarizeBy: none
+		sourceColumn: Handling Start
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Municipal Start'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 0aed0874-032a-44f7-9e35-1c7b6bfc1e05
+		summarizeBy: none
+		sourceColumn: Municipal Start
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Settings = m
+		mode: import
+		queryGroup: '6. Support'
+		source =
+				let
+				    // ---------- config_settings.csv (Setting, Value) ----------
+				    Source = Table.TransformColumnNames(fnReadCsv("config_settings.csv"), Text.Trim),
+				    Rows = Table.SelectRows(Source, each [Setting] <> null),
+				    // Setting -> value, by setting name
+				    Values = Record.FromList(Rows[Value], List.Transform(Rows[Setting], each Text.Trim(Text.From(_)))),
+				    // Value of a setting, or its default if it is missing or empty
+				    GetValue = (name as text, default as any) as any =>
+				        let v = Record.FieldOrDefault(Values, name, null) in if v = null or v = "" then default else v,
+				
+				    // Whole number of the setting, or the default if it cannot be read
+				    IntegerOrDefault = (v as any, default as number) as number => let n = fnInteger(v) in if n = null then default else n,
+				    DateOrDefault = (name as text, default as date) as date => let d = fnDate(GetValue(name, null)) in if d = null then default else d,
+				
+				    // ---------- The settings row (each one with its default value) ----------
+				    Settings = #table(
+				        type table [#"Baseline Date" = date, #"Time Window Months" = Int64.Type, #"Age Alert Months" = Int64.Type,
+				            #"Backlog Start" = date, #"Handling Start" = date, #"Municipal Start" = date],
+				        {{
+				            DateOrDefault("BaselineDate", #date(2026, 5, 31)),
+				            IntegerOrDefault(GetValue("TimeWindowMonths", 6), 6),
+				            IntegerOrDefault(GetValue("AgeAlertMonths", 12), 12),
+				            DateOrDefault("BacklogStart", #date(2023, 1, 1)),
+				            DateOrDefault("HandlingStart", #date(2020, 1, 1)),
+				            DateOrDefault("MunicipalStart", #date(2023, 1, 1))
+				        }}),
+				    // One row read by almost every query: buffered so the file is not read again on every use
+				    Final = Table.Buffer(Settings)
+				in
+				    Final
+
+	annotation PBI_ResultType = Table

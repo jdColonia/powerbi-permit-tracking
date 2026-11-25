@@ -1,0 +1,36 @@
+relationship Fact_Orders_Dim_WorkType
+	fromColumn: Fact_Orders.WorkTypeKey
+	toColumn: Dim_WorkType.WorkTypeKey
+
+relationship Fact_Orders_Dim_OrderStatus
+	fromColumn: Fact_Orders.OrderStatusKey
+	toColumn: Dim_OrderStatus.OrderStatusKey
+
+relationship Fact_Orders_Dim_ClosureReason
+	fromColumn: Fact_Orders.ClosureReasonKey
+	toColumn: Dim_ClosureReason.ClosureReasonKey
+
+relationship Fact_Orders_Dim_Location
+	fromColumn: Fact_Orders.LocationKey
+	toColumn: Dim_Location.LocationKey
+
+relationship Fact_Orders_Dim_WorkUnit
+	fromColumn: Fact_Orders.WorkUnitKey
+	toColumn: Dim_WorkUnit.WorkUnitKey
+
+relationship Fact_Orders_Closure_Dim_Calendar
+	fromColumn: Fact_Orders.'Closure Date'
+	toColumn: Dim_Calendar.Date
+
+relationship Fact_Orders_Creation_Dim_Calendar
+	isActive: false
+	fromColumn: Fact_Orders.'Created Date'
+	toColumn: Dim_Calendar.Date
+
+relationship Fact_Permits_Dim_Location
+	fromColumn: Fact_Permits.LocationKey
+	toColumn: Dim_Location.LocationKey
+
+relationship Fact_Permits_Granted_Dim_Calendar
+	fromColumn: Fact_Permits.'Granted Date'
+	toColumn: Dim_Calendar.Date

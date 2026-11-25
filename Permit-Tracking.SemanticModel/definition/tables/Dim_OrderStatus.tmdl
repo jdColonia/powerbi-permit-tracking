@@ -1,0 +1,81 @@
+/// Order statuses (0 Registered, 5 Assigned, 8 Closed). Unknown status codes found in the data are added as "Other".
+table Dim_OrderStatus
+	lineageTag: 697fcef8-3481-4c61-b892-6d8146595f92
+
+	column OrderStatusKey
+		dataType: int64
+		isHidden
+		lineageTag: f450a3c4-4c91-4283-9aa6-989ac23a94ca
+		summarizeBy: none
+		sourceColumn: OrderStatusKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Status ES'
+		dataType: string
+		lineageTag: 818a880f-a35b-456a-aec6-2b5148d40745
+		summarizeBy: none
+		sourceColumn: Status ES
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Status EN'
+		dataType: string
+		lineageTag: 76b02999-e438-5d16-9af1-2e58d55d5b09
+		summarizeBy: none
+		sourceColumn: Status EN
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Open'
+		dataType: boolean
+		lineageTag: 5ab22f07-c063-4a2e-b7e5-209d8bdaccde
+		summarizeBy: none
+		sourceColumn: Is Open
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Closed'
+		dataType: boolean
+		lineageTag: 819577be-d5a2-4152-97d7-e4504ce10a83
+		summarizeBy: none
+		sourceColumn: Is Closed
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Dim_OrderStatus = m
+		mode: import
+		queryGroup: '4. Dimensions'
+		source =
+				let
+				    StatusType = type table [OrderStatusKey = Int64.Type, #"Status ES" = text, #"Status EN" = text, #"Is Open" = logical, #"Is Closed" = logical],
+				    // Fixed status catalog
+				    Catalog = #table(StatusType,
+				        {
+				            {0, "Registrada", "Registered", true,  false},
+				            {5, "Asignada",   "Assigned",   true,  false},
+				            {8, "Cerrada",    "Closed",     false, true}
+				        }
+				    ),
+				    // Statuses found in the data (no repeats) and, of those, the ones that are not in the catalog
+				    InData = Table.Distinct(
+				        Table.SelectRows(Table.SelectColumns(OrdersUnique, {"Order Status Code", "Order Status"}), each [Order Status Code] <> null),
+				        {"Order Status Code"}),
+				    Unknown = Table.SelectRows(InData, each not List.Contains(Catalog[OrderStatusKey], [Order Status Code])),
+				    // Unknown statuses are added as "Other: ..." and are neither open nor closed
+				    Others = Table.FromRecords(
+				        List.Transform(Table.ToRecords(Unknown), (r) => [
+				            OrderStatusKey = r[Order Status Code],
+				            #"Status ES" = "Otro: " & (if r[Order Status] = null then Text.From(r[Order Status Code]) else r[Order Status]),
+				            #"Status EN" = "Other: " & (if r[Order Status] = null then Text.From(r[Order Status Code]) else r[Order Status]),
+				            #"Is Open" = false,
+				            #"Is Closed" = false
+				        ]),
+				        StatusType),
+				    Combined = Table.Combine({Catalog, Others}),
+				    // Small table used by many queries: buffered
+				    Final = Table.Buffer(Combined)
+				in
+				    Final
+
+	annotation PBI_ResultType = Table

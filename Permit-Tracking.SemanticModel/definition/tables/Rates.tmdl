@@ -1,0 +1,107 @@
+/// Permit management rates by permit group, with their validity (config_rates.csv). Before VAT.
+table Rates
+	lineageTag: 53d829d7-20d1-46f2-9826-85f9684e5e4c
+
+	column 'Permit Group Key'
+		dataType: string
+		lineageTag: 92700d0e-ed72-4222-bbfc-8ca6bc5507c9
+		summarizeBy: none
+		sourceColumn: Permit Group Key
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Valid From'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 3ede6a05-1fc3-438a-a773-992fd14d5d10
+		summarizeBy: none
+		sourceColumn: Valid From
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Fixed Value'
+		dataType: double
+		formatString: \C\O\P #,0
+		lineageTag: c661b304-6662-4656-9d79-3cc81f1f64a4
+		summarizeBy: none
+		sourceColumn: Fixed Value
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Max Fixed Km'
+		dataType: double
+		formatString: #,0.#
+		lineageTag: 77a41da6-f33f-4404-8384-466fad3bd4c3
+		summarizeBy: none
+		sourceColumn: Max Fixed Km
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Value Per Km'
+		dataType: double
+		formatString: \C\O\P #,0
+		lineageTag: 03a9b6e9-8635-4fe4-8d76-45e750842a44
+		summarizeBy: none
+		sourceColumn: Value Per Km
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Max Km'
+		dataType: double
+		formatString: #,0.#
+		lineageTag: d5f246e0-5fbd-460a-8604-91cfa00f11e7
+		summarizeBy: none
+		sourceColumn: Max Km
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'VAT Rate'
+		dataType: double
+		formatString: 0%
+		lineageTag: 5821e401-d501-46a0-811a-27c62213eeaf
+		summarizeBy: none
+		sourceColumn: VAT Rate
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Filing Payment Rate'
+		dataType: double
+		formatString: 0%
+		lineageTag: e9025e57-03d4-4472-a3c7-5a89dca247f9
+		summarizeBy: none
+		sourceColumn: Filing Payment Rate
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Rates = m
+		mode: import
+		queryGroup: '6. Support'
+		source =
+				let
+				    // ---------- config_rates.csv ----------
+				    Source = Table.TransformColumnNames(fnReadCsv("config_rates.csv"), Text.Trim),
+				    Columns = Table.SelectColumns(Source,
+				        {"Permit Group", "Valid From", "Fixed Value", "Max Fixed Km", "Value Per Km", "Max Km", "VAT Rate", "Filing Payment Rate"}, MissingField.UseNull),
+
+				    Typed = Table.TransformColumns(Columns, {
+				        {"Permit Group", each let t = fnText(_) in if t = null then null else Text.Upper(t), type text},
+				        {"Valid From", fnDate, type date},
+				        {"Fixed Value", fnNumber, type number},
+				        {"Max Fixed Km", fnNumber, type number},
+				        {"Value Per Km", fnNumber, type number},
+				        {"Max Km", fnNumber, type number},
+				        {"VAT Rate", each let n = fnNumber(_) in if n = null then 0.19 else if n > 1 then n / 100 else n, type number},
+				        {"Filing Payment Rate", each let n = fnNumber(_) in if n = null then 0 else if n > 1 then n / 100 else n, type number}
+				    }),
+
+				    // Without a group, a validity date or a fixed value there is no rate
+				    NonEmpty = Table.SelectRows(Typed, each [Permit Group] <> null and [Valid From] <> null and [Fixed Value] <> null),
+				    // Sorted by group and validity date
+				    Sorted = Table.Sort(NonEmpty, {{"Permit Group", Order.Ascending}, {"Valid From", Order.Ascending}}),
+				    Renamed = Table.RenameColumns(Sorted, {{"Permit Group", "Permit Group Key"}})
+				in
+				    Renamed
+
+	annotation PBI_ResultType = Table
