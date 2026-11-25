@@ -1,0 +1,604 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.14.0/schema.json",
+  "name": "tbl_cost_detail",
+  "position": {
+    "x": 48,
+    "y": 852,
+    "z": 21000,
+    "height": 520,
+    "width": 1824,
+    "tabOrder": 21000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Fact_Orders"
+                    }
+                  },
+                  "Property": "Order ID"
+                }
+              },
+              "queryRef": "Fact_Orders.Order ID",
+              "nativeQueryRef": "Order ID",
+              "displayName": "N.º de orden"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Fact_Orders"
+                    }
+                  },
+                  "Property": "Request ID"
+                }
+              },
+              "queryRef": "Fact_Orders.Request ID",
+              "nativeQueryRef": "Request ID",
+              "displayName": "N.º de solicitud"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Dim_WorkType"
+                    }
+                  },
+                  "Property": "Work Type Description ES"
+                }
+              },
+              "queryRef": "Dim_WorkType.Work Type Description ES",
+              "nativeQueryRef": "Work Type Description ES",
+              "displayName": "Tipo de trabajo"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Dim_Location"
+                    }
+                  },
+                  "Property": "Municipality"
+                }
+              },
+              "queryRef": "Dim_Location.Municipality",
+              "nativeQueryRef": "Municipality",
+              "displayName": "Municipio"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Fact_Orders"
+                    }
+                  },
+                  "Property": "Created Date"
+                }
+              },
+              "queryRef": "Fact_Orders.Created Date",
+              "nativeQueryRef": "Created Date",
+              "displayName": "Creación"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Fact_Orders"
+                    }
+                  },
+                  "Property": "Payment Stage ES"
+                }
+              },
+              "queryRef": "Fact_Orders.Payment Stage ES",
+              "nativeQueryRef": "Payment Stage ES",
+              "displayName": "Etapa de pago"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Fact_Orders"
+                    }
+                  },
+                  "Property": "Permit Cost"
+                }
+              },
+              "queryRef": "Fact_Orders.Permit Cost",
+              "nativeQueryRef": "Permit Cost",
+              "displayName": "Costo antes de IVA"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Fact_Orders"
+                    }
+                  },
+                  "Property": "Payment At Filing"
+                }
+              },
+              "queryRef": "Fact_Orders.Payment At Filing",
+              "nativeQueryRef": "Payment At Filing",
+              "displayName": "Pagado al solicitar"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Fact_Orders"
+                    }
+                  },
+                  "Property": "Payment Delivery Confirmed"
+                }
+              },
+              "queryRef": "Fact_Orders.Payment Delivery Confirmed",
+              "nativeQueryRef": "Payment Delivery Confirmed",
+              "displayName": "Pagado al entregar"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Fact_Orders"
+                    }
+                  },
+                  "Property": "Payment Pending Confirmation"
+                }
+              },
+              "queryRef": "Fact_Orders.Payment Pending Confirmation",
+              "nativeQueryRef": "Payment Pending Confirmation",
+              "displayName": "Pendiente"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Fact_Orders"
+                    }
+                  },
+                  "Property": "Permit Cost With VAT"
+                }
+              },
+              "queryRef": "Fact_Orders.Permit Cost With VAT",
+              "nativeQueryRef": "Permit Cost With VAT",
+              "displayName": "Costo con IVA"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "Fact_Orders"
+                  }
+                },
+                "Property": "Created Date"
+              }
+            },
+            "direction": "Descending"
+          }
+        ]
+      }
+    },
+    "objects": {
+      "total": [
+        {
+          "properties": {
+            "totals": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "columnWidth": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "120D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Fact_Orders.Order ID"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "120D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Fact_Orders.Request ID"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "170D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Dim_WorkType.Work Type Description ES"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "170D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Dim_Location.Municipality"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "130D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Fact_Orders.Created Date"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "170D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Fact_Orders.Payment Stage ES"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "175D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Fact_Orders.Permit Cost"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "155D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Fact_Orders.Payment At Filing"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "185D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Fact_Orders.Payment Delivery Confirmed"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "165D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Fact_Orders.Payment Pending Confirmation"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "165D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Fact_Orders.Permit Cost With VAT"
+          }
+        }
+      ],
+      "grid": [
+        {
+          "properties": {
+            "rowPadding": {
+              "expr": {
+                "Literal": {
+                  "Value": "6D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "columnHeaders": [
+        {
+          "properties": {}
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  },
+                  "Property": "Cost Detail Title"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "subTitle": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Los más recientes primero. Por confirmar: la orden sigue abierta; el permiso puede estar entregado, pero los datos no lo dicen.'"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "padding": [
+        {
+          "properties": {
+            "top": {
+              "expr": {
+                "Literal": {
+                  "Value": "16D"
+                }
+              }
+            },
+            "bottom": {
+              "expr": {
+                "Literal": {
+                  "Value": "16D"
+                }
+              }
+            },
+            "left": {
+              "expr": {
+                "Literal": {
+                  "Value": "24D"
+                }
+              }
+            },
+            "right": {
+              "expr": {
+                "Literal": {
+                  "Value": "24D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "background": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "color": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'#FFFFFF'"
+                    }
+                  }
+                }
+              }
+            },
+            "transparency": {
+              "expr": {
+                "Literal": {
+                  "Value": "0D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "border": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "color": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'#E4E4E0'"
+                    }
+                  }
+                }
+              }
+            },
+            "radius": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "visualHeader": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "soloConCosto",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "_Measures"
+              }
+            },
+            "Property": "Has Cost Flag"
+          }
+        },
+        "type": "Advanced",
+        "filter": {
+          "Version": 2,
+          "From": [
+            {
+              "Name": "m",
+              "Entity": "_Measures",
+              "Type": 0
+            }
+          ],
+          "Where": [
+            {
+              "Condition": {
+                "Comparison": {
+                  "ComparisonKind": 0,
+                  "Left": {
+                    "Measure": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Source": "m"
+                        }
+                      },
+                      "Property": "Has Cost Flag"
+                    }
+                  },
+                  "Right": {
+                    "Literal": {
+                      "Value": "1L"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "howCreated": "User"
+      }
+    ]
+  }
+}
