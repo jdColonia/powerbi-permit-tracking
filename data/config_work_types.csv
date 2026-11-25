@@ -1,0 +1,14 @@
+﻿Work Type Code,Description ES,Description EN,Group,Group ES,Group EN,Area ES,Area EN,Counts In Backlog,Stage Order,Permit Group,Permit Group ES,Permit Group EN
+WT01,Radicación: excavación,Excavation permit filing,Filing,Solicitud del permiso,Preparing the filing,Permisos municipales,Municipal permits,YES,1,,,
+WT02,Radicación: ocupación de vía,Road occupation permit filing,Filing,Solicitud del permiso,Preparing the filing,Permisos municipales,Municipal permits,YES,2,,,
+WT03,Radicación: espacio público,Public space permit filing,Filing,Solicitud del permiso,Preparing the filing,Permisos municipales,Municipal permits,YES,3,,,
+WT04,Trámite: excavación,Excavation permit review,Review,En revisión municipal,City hall review,Permisos municipales,Municipal permits,YES,4,,,
+WT05,Trámite: ocupación de vía,Road occupation permit review,Review,En revisión municipal,City hall review,Permisos municipales,Municipal permits,YES,5,,,
+WT06,Trámite: espacio público,Public space permit review,Review,En revisión municipal,City hall review,Permisos municipales,Municipal permits,YES,6,,,
+WT07,Permiso ambiental regional,Regional environmental permit,Standalone,Otras entidades,Other authorities,Gestión ambiental,Environmental management,YES,7,ENVIRONMENTAL,Permisos ambientales,Environmental permits
+WT08,Permiso nacional de vías,National roads permit,Standalone,Otras entidades,Other authorities,Entidades viales,Road authorities,YES,8,NATIONAL,Permisos nacionales,National permits
+WT09,Permiso departamental de vías,Regional roads permit,Standalone,Otras entidades,Other authorities,Entidades viales,Road authorities,YES,9,DEPARTMENTAL,Permisos departamentales,Departmental permits
+WT10,Ocupación de cauce,Watercourse crossing permit,Standalone,Otras entidades,Other authorities,Gestión ambiental,Environmental management,YES,10,WATERCOURSE,Ocupación de cauce (municipal),Watercourse crossing (municipal)
+WT11,Aprovechamiento forestal,Forestry permit,Standalone,Otras entidades,Other authorities,Gestión ambiental,Environmental management,YES,11,FORESTRY,Aprovechamiento forestal (municipal),Forestry permits (municipal)
+WT12,Radicación: obra menor,Minor works notice filing,Filing,Solicitud del permiso,Preparing the filing,Permisos municipales,Municipal permits,NO,12,,,
+WT13,Permiso especial (sin uso),Special permit filing (unused),Filing,Solicitud del permiso,Preparing the filing,Permisos municipales,Municipal permits,NO,13,,,

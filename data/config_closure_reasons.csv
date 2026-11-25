@@ -1,0 +1,10 @@
+﻿Closure Reason Code,Closure Reason,Reason ES,Reason EN,Result,Result ES,Result EN
+CR01,PERMISO ENTREGADO,Permiso entregado,Permit delivered,Granted,Aprobado,Granted
+CR02,PERMISO DENEGADO,Permiso denegado,Permit denied,Denied,Negado,Denied
+CR03,PERMISO NO EXPEDIDO,Permiso no expedido,Permit not issued,NoResponse,Sin respuesta,No response
+CR04,ORDEN NO REQUERIDA,Orden no requerida,Order not required,AdminClosure,Cierre administrativo,Administrative closure
+CR05,DOCUMENTACION INCOMPLETA,Documentación incompleta,Incomplete documents,Returned,Devuelto,Returned
+CR06,ORDEN CUMPLIDA,Orden cumplida,Order completed,Completed,Cumplida,Completed
+CR07,ORDEN CUMPLIDA DE PROYECTO,Orden cumplida de proyecto,Project order completed,Completed,Cumplida,Completed
+CR08,ORDEN INCUMPLIDA,Orden incumplida,Order not completed,Returned,Devuelto,Returned
+CR09,ORDEN SIN RESULTADO,Orden sin resultado,Order without result,,,
